@@ -15,9 +15,6 @@ Paper map
   Section 3.3.2 work-efficient parallel scan, kernel fusion     `selective_scan_chunked`
   Section 3.4   Mamba block (H3 + gated MLP fused), Figure 3    `MambaBlock`
   Appendix D    recomputation instead of storing (B,L,D,N)      `MambaLM.grad_checkpoint`
-
-The one deliberate departure from the paper: N may vary with depth under a fixed total
-state budget (`MambaConfig.state_schedule`, see `state_dims`).  "constant" is the paper.
 """
 
 from __future__ import annotations
@@ -39,20 +36,18 @@ class MambaConfig:
     vocab_size: int = 65
     d_model: int = 384          # D  (model width)
     n_layer: int = 6            # number of Mamba blocks
-    d_state: int = 16           # N  (mean SSM state dim; total budget = n_layer * d_state)
+    d_state: int = 16           # N  (SSM state dim; paper uses 16)
     d_conv: int = 4             # short causal conv width
     expand: int = 2             # E  (paper: "we always fix E = 2")
     dt_rank: int | str = "auto"  # ceil(D/16), the low-rank bottleneck of s_Delta
     dt_min: float = 1e-3        # Delta init range (log-uniform)
     dt_max: float = 1e-1
     scan_chunk: int = 8         # doubling-scan chunk: log2(chunk) passes per chunk
-    state_schedule: str = "constant"   # how the state budget is spread over depth
 
     def __post_init__(self):
         if self.dt_rank == "auto":
             self.dt_rank = math.ceil(self.d_model / 16)
         self.d_inner = int(self.expand * self.d_model)
-        self.d_states = state_dims(self.n_layer, self.d_state, self.state_schedule)
 
     def to_dict(self):
         return asdict(self)
@@ -61,33 +56,6 @@ class MambaConfig:
     def from_dict(d: dict) -> "MambaConfig":
         fields = set(MambaConfig.__dataclass_fields__)
         return MambaConfig(**{k: v for k, v in d.items() if k in fields})
-
-
-def state_dims(n_layer: int, d_state: int, kind: str = "constant") -> list[int]:
-    """Per-layer N under a *fixed total state budget* of `n_layer * d_state`.
-
-      "constant"  every layer gets N = d_state.  The paper's setting (N = 16 throughout).
-      "linear"    N grows linearly with depth, N_l ~ (l + 1), rescaled to spend exactly the
-                  same budget:  n_layer=6, d_state=16  ->  [5, 9, 13, 19, 23, 27], sum 96.
-
-    Only `x_proj` (d_inner x (dt_rank + 2N)) and `A_log` (d_inner x N) depend on N, and both
-    are linear in it, so any schedule with the same sum has the *same* parameter count and
-    the same scan FLOPs/activation bytes as the constant baseline -- the schedule is a pure
-    reallocation, which is what makes it a clean A/B.
-    """
-    if kind == "constant":
-        return [d_state] * n_layer
-    if kind != "linear":
-        raise ValueError(f"unknown state_schedule {kind!r}")
-
-    # Round the *cumulative* ramp, then difference it: keeps the total exactly on budget
-    # (plain per-layer rounding does not) and stays monotonically increasing.
-    budget, w = n_layer * d_state, n_layer * (n_layer + 1) / 2
-    cum = [round(budget * (l + 1) * (l + 2) / 2 / w) for l in range(n_layer)]
-    dims = [cum[0]] + [cum[l] - cum[l - 1] for l in range(1, n_layer)]
-    if min(dims) < 1:
-        raise ValueError(f"state budget {budget} is too small for {n_layer} linear layers")
-    return dims
 
 
 # --------------------------------------------------------------------------------------
@@ -197,11 +165,10 @@ def compile_scan(enable: bool = True):
 class SelectiveSSM(nn.Module):
     """dt / B / C are produced from the input -> time-varying, "selective" SSM."""
 
-    def __init__(self, cfg: MambaConfig, d_state: int):
+    def __init__(self, cfg: MambaConfig):
         super().__init__()
         self.cfg = cfg
-        self.d_state = d_state                     # this layer's N (see `state_dims`)
-        d_in, n, r = cfg.d_inner, d_state, cfg.dt_rank
+        d_in, n, r = cfg.d_inner, cfg.d_state, cfg.dt_rank
 
         self.x_proj = nn.Linear(d_in, r + 2 * n, bias=False)   # x -> (dt_low_rank, B, C)
         self.dt_proj = nn.Linear(r, d_in, bias=True)           # Broadcast_D(Linear_1(x))
@@ -224,8 +191,8 @@ class SelectiveSSM(nn.Module):
         self.D._no_weight_decay = True
 
     def _project(self, x):
-        n = self.d_state
-        dt, B_, C_ = torch.split(self.x_proj(x), [self.cfg.dt_rank, n, n], -1)
+        cfg = self.cfg
+        dt, B_, C_ = torch.split(self.x_proj(x), [cfg.dt_rank, cfg.d_state, cfg.d_state], -1)
         return F.softplus(self.dt_proj(dt)), B_, C_            # dt > 0
 
     def forward(self, x, z):
@@ -252,14 +219,13 @@ class SelectiveSSM(nn.Module):
 class MambaBlock(nn.Module):
     """in_proj -> (conv -> silu -> S6) * silu(gate) -> out_proj"""
 
-    def __init__(self, cfg: MambaConfig, d_state: int):
+    def __init__(self, cfg: MambaConfig):
         super().__init__()
         self.cfg = cfg
-        self.d_state = d_state
         d_in = cfg.d_inner
         self.in_proj = nn.Linear(cfg.d_model, 2 * d_in, bias=False)
         self.conv1d = nn.Conv1d(d_in, d_in, cfg.d_conv, groups=d_in, padding=cfg.d_conv - 1)
-        self.ssm = SelectiveSSM(cfg, d_state)
+        self.ssm = SelectiveSSM(cfg)
         self.out_proj = nn.Linear(d_in, cfg.d_model, bias=False)
 
     def forward(self, u):
@@ -281,16 +247,16 @@ class MambaBlock(nn.Module):
 
     def allocate_cache(self, batch, device):
         return (torch.zeros(batch, self.cfg.d_inner, self.cfg.d_conv, device=device),
-                torch.zeros(batch, self.cfg.d_inner, self.d_state, device=device))
+                torch.zeros(batch, self.cfg.d_inner, self.cfg.d_state, device=device))
 
 
 class ResidualBlock(nn.Module):
     """Pre-norm residual wrapper (Section 3.4: block + norm + residual, repeated)."""
 
-    def __init__(self, cfg: MambaConfig, d_state: int):
+    def __init__(self, cfg: MambaConfig):
         super().__init__()
         self.norm = RMSNorm(cfg.d_model)
-        self.mixer = MambaBlock(cfg, d_state)
+        self.mixer = MambaBlock(cfg)
 
     def forward(self, x):
         return x + self.mixer(self.norm(x))
@@ -308,7 +274,7 @@ class MambaLM(nn.Module):
         super().__init__()
         self.cfg = cfg
         self.embedding = nn.Embedding(cfg.vocab_size, cfg.d_model)
-        self.layers = nn.ModuleList([ResidualBlock(cfg, n) for n in cfg.d_states])
+        self.layers = nn.ModuleList([ResidualBlock(cfg) for _ in range(cfg.n_layer)])
         self.norm_f = RMSNorm(cfg.d_model)
         self.lm_head = nn.Linear(cfg.d_model, cfg.vocab_size, bias=False)
         self.lm_head.weight = self.embedding.weight            # tied
@@ -331,13 +297,6 @@ class MambaLM(nn.Module):
     def num_parameters(self, non_embedding: bool = False) -> int:
         n = sum(p.numel() for p in self.parameters())
         return n - self.embedding.weight.numel() if non_embedding else n
-
-    def state_floats(self) -> int:
-        """Recurrent state carried per sequence: conv windows + SSM states, all layers.
-
-        Summed rather than `n_layer *` one layer, because N can vary with depth.
-        """
-        return sum(self.cfg.d_inner * (self.cfg.d_conv + m.mixer.d_state) for m in self.layers)
 
     def forward(self, idx, targets: Optional[torch.Tensor] = None):
         x = self.embedding(idx)
