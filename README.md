@@ -11,6 +11,7 @@ COPY and CoT Reasoning").
 | `mamba_growing.py`, `test_growing.py` | **Variation 2**: N grows along the sequence on a schedule, capped at N_max; `test_growing.py` checks it |
 | `copy_eval/` | Copy-task train / eval harness (from [sjelassi/transformers_ssm_copy](https://github.com/sjelassi/transformers_ssm_copy)) |
 | `cot_eval/` | CoT / LIS train / eval harness (from [guyuntian/CoT_benchmark](https://github.com/guyuntian/CoT_benchmark)) |
+| `docs/UNDERSTANDING.md`, `docs/understanding.html` | **Start here if Mamba is new to you:** a no-background guide to Mamba, var1, var2 and the evaluation code (the `.html` version is interactive; open it in a browser) |
 | `mamba.pdf`, `cot.pdf` | The papers |
 
 Both harnesses take `--model mamba | mamba_var1 | mamba_var2`, so the three models are trained and tested under identical

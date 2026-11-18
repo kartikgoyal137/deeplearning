@@ -1,0 +1,666 @@
+<title>Mamba Memory Guide</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;600&family=Space+Grotesk:wght@500;700&display=swap">
+<style>
+/* Layout concept: a long technical guide in one narrow column. Teal = a layer's memory, blue = memory that is kept,
+   amber = memory that is new / grown. Diagrams use the same three hues everywhere. */
+:root{
+  --bg:#f4f7f9; --surface:#ffffff; --fg:#13202b; --muted:#566676; --line:#d3dce4; --code:#eaf0f5;
+  --accent:#0a7872; --accent-soft:#d6efec; --kept:#2755b5; --kept-soft:#dbe5fa; --grow:#b85a08; --grow-soft:#fbe3cc; --warn:#b3261e;
+  --display:"Space Grotesk",system-ui,sans-serif; --body:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif; --mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0d141b; --surface:#16212b; --fg:#e5ecf2; --muted:#93a5b5; --line:#2a3947; --code:#1b2833;
+  --accent:#4cc6bd; --accent-soft:#123f3c; --kept:#7ea6f8; --kept-soft:#1b2d54; --grow:#f2a552; --grow-soft:#4b2f12; --warn:#ff8f86; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0d141b; --surface:#16212b; --fg:#e5ecf2; --muted:#93a5b5; --line:#2a3947; --code:#1b2833;
+  --accent:#4cc6bd; --accent-soft:#123f3c; --kept:#7ea6f8; --kept-soft:#1b2d54; --grow:#f2a552; --grow-soft:#4b2f12; --warn:#ff8f86; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:16px;line-height:1.6;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:30;background:var(--bg)}
+*{box-sizing:border-box}
+.wrap{max-width:900px;margin:0 auto}
+h1,h2,h3{font-family:var(--display);line-height:1.2;text-wrap:balance;margin:0}
+h1{font-size:clamp(2rem,5vw,2.9rem);font-weight:700;letter-spacing:-.02em}
+h2{font-size:1.65rem;font-weight:700;letter-spacing:-.01em;margin-bottom:.6rem}
+h3{font-size:1.1rem;font-weight:700;margin:1.4rem 0 .4rem}
+p{margin:.6rem 0;max-width:68ch} ul,ol{max-width:68ch;padding-left:1.2rem} li{margin:.25rem 0}
+code,.mono{font-family:var(--mono);font-size:.88em;background:var(--code);padding:.08em .35em;border-radius:4px}
+a{color:var(--kept)}
+.nav{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--bg);border-bottom:1px solid var(--line);
+  margin:0 calc(-1 * max(16px,env(safe-area-inset-left,0px)));padding:0 max(16px,env(safe-area-inset-left,0px));overflow-x:auto;white-space:nowrap}
+.nav a{display:inline-block;padding:.7rem .6rem;font-size:.85rem;color:var(--muted);text-decoration:none;font-weight:600}
+.nav a:hover,.nav a:focus-visible{color:var(--fg);outline:none;box-shadow:inset 0 -2px 0 var(--accent)}
+section{padding-block:2rem;border-top:1px solid var(--line);scroll-margin-top:3rem}
+.hero{padding-block:2.2rem 1.6rem}
+.lede{font-size:1.12rem;color:var(--muted);max-width:60ch}
+.tag{display:inline-block;font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;font-weight:600;color:var(--accent);margin-bottom:.4rem}
+.note{border-left:3px solid var(--grow);background:var(--grow-soft);padding:.6rem .9rem;border-radius:0 8px 8px 0;max-width:68ch;font-size:.93rem}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:1rem}
+figure{margin:1.1rem 0}
+figcaption{font-size:.88rem;color:var(--muted);margin-top:.4rem;max-width:68ch}
+.fig{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:.6rem;overflow-x:auto}
+svg.d{display:block;width:100%;height:auto;max-width:100%}
+svg.d text{fill:var(--fg);font-family:var(--body);font-size:12.5px}
+svg.d .m{fill:var(--muted)} svg.d .b{font-weight:600} svg.d .mono{font-family:var(--mono);background:none;padding:0}
+.hidden-defs{position:absolute;width:0;height:0}
+.part{cursor:pointer} .part:focus-visible rect,.part:hover rect{stroke-width:2.5}
+table{border-collapse:collapse;width:100%;font-size:.92rem}
+.tw{overflow-x:auto;max-width:100%}
+th,td{border-bottom:1px solid var(--line);padding:.45rem .6rem;text-align:left;vertical-align:top}
+th{font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+.ctl{display:flex;flex-wrap:wrap;gap:.9rem 1.4rem;align-items:end;margin:.4rem 0 .8rem}
+.ctl label{display:flex;flex-direction:column;gap:.2rem;font-size:.82rem;color:var(--muted);min-width:0}
+.ctl input[type=range]{width:min(240px,70vw);accent-color:var(--accent)}
+.ctl input[type=text]{font:inherit;font-family:var(--mono);font-size:.9rem;padding:.4rem .5rem;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);width:min(300px,80vw)}
+.ctl .v{font-family:var(--mono);color:var(--fg)}
+button{font:inherit;font-size:.85rem;font-weight:600;padding:.42rem .8rem;border-radius:6px;border:1px solid var(--line);background:var(--surface);color:var(--fg);cursor:pointer}
+button:hover,button:focus-visible{border-color:var(--accent);outline:none}
+.chips{display:flex;flex-wrap:wrap;align-items:center;gap:2px;margin:.3rem 0}
+.chip{display:inline-flex;min-width:2em;height:2.1em;padding:0 .35em;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:6px;font-family:var(--mono);font-size:.9rem;background:var(--surface)}
+.chip.loss{background:var(--accent-soft);border-color:var(--accent)} .chip.sep{background:var(--code);color:var(--muted)}
+.chip.bad{background:var(--grow-soft);border-color:var(--grow);color:var(--grow)} .chip.lost{opacity:.45;text-decoration:line-through;border-style:dashed}
+.chip.kept{background:var(--kept-soft);border-color:var(--kept)} .chip.step{border-style:dashed;color:var(--muted)}
+.row-l{font-size:.8rem;color:var(--muted);margin-top:.7rem}
+.legend{display:flex;flex-wrap:wrap;gap:.4rem 1.1rem;font-size:.85rem;color:var(--muted);margin:.4rem 0}
+.legend i{display:inline-block;width:.9em;height:.9em;border-radius:3px;margin-right:.35em;vertical-align:-.1em;border:1px solid var(--line)}
+.err{color:var(--warn);font-size:.88rem;min-height:1.3em}
+pre{background:var(--code);border-radius:8px;padding:.8rem 1rem;overflow-x:auto;font-family:var(--mono);font-size:.82rem;line-height:1.5;margin:.6rem 0;max-width:100%}
+.cmd{position:relative}.cmd button{position:absolute;right:.5rem;top:.5rem;font-size:.75rem;padding:.2rem .5rem}
+.big{font-family:var(--mono);font-size:1.05rem;font-weight:600}
+footer{padding-block:2rem 3rem;border-top:1px solid var(--line);color:var(--muted);font-size:.88rem}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+</style>
+
+<svg class="hidden-defs" aria-hidden="true"><defs>
+  <marker id="ar-m" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L8,4 L0,8 z" style="fill:var(--muted)"/></marker>
+  <marker id="ar-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L8,4 L0,8 z" style="fill:var(--accent)"/></marker>
+  <marker id="ar-g" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L8,4 L0,8 z" style="fill:var(--grow)"/></marker>
+</defs></svg>
+
+<div class="wrap">
+<nav class="nav" aria-label="Sections">
+  <a href="#s1">Problem</a><a href="#s2">State</a><a href="#s3">Selective</a><a href="#s4">Layer</a><a href="#s5">Model</a>
+  <a href="#s6">Scan</a><a href="#s7">Copying</a><a href="#s8">Tasks</a><a href="#s9">var1</a><a href="#s10">var2</a><a href="#s11">Code map</a>
+</nav>
+
+<header class="hero">
+  <span class="tag">Guide, no background needed</span>
+  <h1>Mamba, and a memory that grows</h1>
+  <p class="lede">What Mamba is, what the two variations in this repository change, and what the evaluation code does, with pictures you can
+  move. Sections 1 to 7 are background, 8 describes the two tasks, 9 and 10 are the variations, 11 maps all of it to the files.</p>
+  <p class="note">No experiment results exist yet. Everything below describes how the code works, not how well it performs.</p>
+</header>
+
+<section id="s1">
+  <h2>1. The problem: remembering the past</h2>
+  <p>A language model reads tokens (characters, numbers, words) one after another and predicts the next one. To do that it must remember
+  what it already read. There are two classic ways to remember. A <b>Transformer</b> keeps every past token and looks back at all of them.
+  <b>Mamba</b> keeps one fixed-size summary, called the <b>state</b>, and updates it as each token arrives.</p>
+  <figure>
+    <div class="fig"><svg class="d" viewBox="0 0 640 300" role="img" aria-label="Memory needed against tokens read: a Transformer's grows steadily, Mamba's stays flat, and variation 2 grows in steps up to a cap.">
+      <line x1="70" y1="30" x2="70" y2="250" stroke="var(--line)" stroke-width="1.5"/><line x1="70" y1="250" x2="610" y2="250" stroke="var(--line)" stroke-width="1.5"/>
+      <polyline points="70,235 610,45" fill="none" stroke="var(--kept)" stroke-width="3"/>
+      <polyline points="70,150 610,150" fill="none" stroke="var(--accent)" stroke-width="3"/>
+      <polyline points="70,205 190,205 190,170 310,170 310,135 430,135 430,100 610,100" fill="none" stroke="var(--grow)" stroke-width="3" stroke-dasharray="1 0"/>
+      <line x1="88" y1="38" x2="118" y2="38" stroke="var(--kept)" stroke-width="3"/><text x="126" y="42">Transformer: keeps every token</text>
+      <line x1="88" y1="58" x2="118" y2="58" stroke="var(--accent)" stroke-width="3"/><text x="126" y="62">Mamba: one fixed-size state</text>
+      <line x1="88" y1="78" x2="118" y2="78" stroke="var(--grow)" stroke-width="3"/><text x="126" y="82">var2: state grows in steps, then stops (the cap)</text>
+      <text class="m" x="340" y="284" text-anchor="middle">tokens read</text>
+      <text class="m" x="22" y="140" text-anchor="middle" transform="rotate(-90 22 140)">memory needed (illustrative)</text>
+    </svg></div>
+    <figcaption>The shape of the problem. Mamba's flat line is cheap but can overflow; a Transformer never overflows but its cost keeps growing. The idea tested here: start small like Mamba, and grow only when needed, with a ceiling.</figcaption>
+  </figure>
+  <div class="tw"><table>
+    <tr><th></th><th>Transformer</th><th>Mamba</th></tr>
+    <tr><td>Memory of the past</td><td>grows with every token</td><td><b>fixed size</b></td></tr>
+    <tr><td>Cost of reading a text of length L</td><td>about L × L</td><td>about L</td></tr>
+    <tr><td>Strength</td><td>can look up anything exactly</td><td>fast and cheap</td></tr>
+    <tr><td>Weakness</td><td>expensive on long texts</td><td>the fixed memory can overflow</td></tr>
+  </table></div>
+</section>
+
+<section id="s2">
+  <h2>2. The key idea: a state updated token by token</h2>
+  <p>Mamba belongs to the family of <b>state space models</b>. The state <code>h</code> is a list of numbers that acts as memory. For every new token
+  <code>x(t)</code>, the memory first <b>fades</b> a little, then the new token is <b>written</b> in:</p>
+  <pre>h(t) = decay × h(t−1) + write × x(t)        # update the memory
+y(t) = read × h(t)                           # produce an output</pre>
+  <p>Try it. Change the decay and the inputs and watch the memory fade. The default is the worked example: decay 0.5, write 1, inputs 4, 0, 0, 2.</p>
+  <div class="panel">
+    <div class="ctl">
+      <label>decay <span class="v" id="toy-dv">0.50</span><input id="toy-decay" type="range" min="0" max="1" step="0.05" value="0.5"></label>
+      <label>write <span class="v" id="toy-wv">1.00</span><input id="toy-write" type="range" min="0" max="2" step="0.25" value="1"></label>
+      <label>inputs (numbers, up to 12)<input id="toy-in" type="text" value="4, 0, 0, 2" inputmode="decimal"></label>
+    </div>
+    <svg class="d" id="toy-svg" viewBox="0 0 640 230" role="img" aria-label="Bars: the input at each step and the memory after each step."></svg>
+    <div class="legend"><span><i style="background:var(--code)"></i>input x(t)</span><span><i style="background:var(--accent)"></i>memory h(t)</span></div>
+    <div class="tw"><table id="toy-tbl"></table></div>
+    <p id="toy-note" style="color:var(--muted);font-size:.9rem"></p>
+  </div>
+  <h3>The state is more than one number</h3>
+  <p>Real Mamba has many <b>channels</b> (768 in the notebook model) and gives each channel its own <b>N numbers</b> of memory (N = 16 there).
+  The N numbers of a channel forget at different speeds, fixed by <code>A = −1, −2, …, −N</code>: the first dimensions remember long, the last forget quickly.
+  A layer's memory is therefore <code>768 × 16 = 12,288</code> numbers. <b>N is the state size, and the whole project is about N.</b></p>
+  <div class="panel">
+    <div class="ctl"><label>step size Δ <span class="v" id="dim-dv">0.10</span><input id="dim-delta" type="range" min="0.01" max="0.5" step="0.01" value="0.1"></label></div>
+    <svg class="d" id="dim-svg" viewBox="0 0 640 210" role="img" aria-label="Fraction of memory kept per token for each of 16 memory dimensions."></svg>
+    <p id="dim-note" style="color:var(--muted);font-size:.9rem"></p>
+  </div>
+</section>
+
+<section id="s3">
+  <h2>3. What "selective" means</h2>
+  <p>In older state space models the decay, write and read were fixed constants. Mamba's change is that they are <b>computed from the current token</b>,
+  so the model chooses what to remember: strong writes for important tokens, almost none for filler.</p>
+  <figure><div class="fig"><svg class="d" viewBox="0 0 640 250" role="img" aria-label="The token produces Delta, B and C; B writes into the memory, Delta sets how much the memory fades, and C reads the output.">
+    <rect x="20" y="105" width="90" height="40" rx="8" fill="var(--surface)" stroke="var(--fg)" stroke-width="1.5"/><text x="65" y="130" text-anchor="middle" class="b">token x(t)</text>
+    <line x1="110" y1="125" x2="200" y2="45" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#ar-m)"/>
+    <line x1="110" y1="125" x2="200" y2="125" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#ar-m)"/>
+    <line x1="110" y1="125" x2="200" y2="205" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#ar-m)"/>
+    <text class="m" x="128" y="76" transform="rotate(-39 128 76)" text-anchor="middle">computed from the token</text>
+    <rect x="200" y="25" width="140" height="40" rx="8" fill="var(--surface)" stroke="var(--kept)" stroke-width="1.8"/><text x="270" y="42" text-anchor="middle" class="b">Δ (step size)</text><text x="270" y="58" text-anchor="middle" class="m">how much to forget</text>
+    <rect x="200" y="105" width="140" height="40" rx="8" fill="var(--surface)" stroke="var(--kept)" stroke-width="1.8"/><text x="270" y="122" text-anchor="middle" class="b">B(t)</text><text x="270" y="138" text-anchor="middle" class="m">what to write</text>
+    <rect x="200" y="185" width="140" height="40" rx="8" fill="var(--surface)" stroke="var(--kept)" stroke-width="1.8"/><text x="270" y="202" text-anchor="middle" class="b">C(t)</text><text x="270" y="218" text-anchor="middle" class="m">what to read</text>
+    <rect x="400" y="85" width="120" height="80" rx="10" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="2"/><text x="460" y="120" text-anchor="middle" class="b">memory h</text><text x="460" y="138" text-anchor="middle" class="m">768 × N numbers</text>
+    <line x1="340" y1="45" x2="440" y2="85" stroke="var(--kept)" stroke-width="1.5" marker-end="url(#ar-m)"/><text class="m" x="404" y="58">fades h</text>
+    <line x1="340" y1="125" x2="400" y2="125" stroke="var(--kept)" stroke-width="1.5" marker-end="url(#ar-m)"/>
+    <line x1="400" y1="150" x2="340" y2="195" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#ar-a)"/><text class="m" x="372" y="190">reads h</text>
+    <line x1="270" y1="225" x2="270" y2="240" stroke="var(--muted)" stroke-width="1.5"/><line x1="270" y1="240" x2="580" y2="240" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#ar-m)"/>
+    <text x="590" y="244" class="b">y(t)</text>
+    <path d="M470,85 C470,40 530,40 530,85 C530,100 520,105 520,115" fill="none" stroke="var(--accent)" stroke-width="0"/>
+    <text class="m" x="460" y="78" text-anchor="middle">h(t−1) comes in from the previous token</text>
+  </svg></div>
+  <figcaption>One memory update. The token decides all three controls; the old memory is faded, the new token is written in, and the output is read out.</figcaption></figure>
+  <div class="tw"><table>
+    <tr><th>Name</th><th>Meaning</th><th>Where it comes from</th></tr>
+    <tr><td><code>A</code></td><td>fixed forgetting speeds, one per memory number, always negative</td><td>learned once, not per token</td></tr>
+    <tr><td><code>Δ</code> (dt)</td><td>step size: how strongly to apply the update at this token</td><td>computed from the token</td></tr>
+    <tr><td><code>B</code></td><td>what to write</td><td>computed from the token</td></tr>
+    <tr><td><code>C</code></td><td>what to read</td><td>computed from the token</td></tr>
+    <tr><td><code>D</code></td><td>direct skip from input to output</td><td>learned once per channel</td></tr>
+  </table></div>
+  <pre>decay(t) = exp( Δ(t) × A )                          # between 0 and 1, because A &lt; 0 and Δ &gt; 0
+h(t)     = decay(t) × h(t−1)  +  Δ(t) × B(t) × x(t)
+y(t)     = C(t) · h(t)  +  D × x(t)</pre>
+</section>
+
+<section id="s4">
+  <h2>4. One Mamba layer, step by step</h2>
+  <p>A layer wraps the memory update with helpers. Sizes are from the Shakespeare notebooks: model width <code>D = 384</code>, inner width
+  <code>768 = 2 × D</code>, state size <code>N = 16</code>. <b>Click any block</b> to see what it does.</p>
+  <figure><div class="fig"><svg class="d" viewBox="0 0 520 540" role="img" aria-label="One Mamba layer: input, in_proj split into content and gate, convolution, SiLU, selective SSM, multiplied by the gate, out_proj, output.">
+    <g class="part" tabindex="0" role="button" data-k="in"><rect x="170" y="8" width="180" height="36" rx="8" fill="var(--surface)" stroke="var(--fg)" stroke-width="1.5"/><text x="260" y="30" text-anchor="middle" class="b">input · 384 numbers</text></g>
+    <line x1="260" y1="44" x2="260" y2="68" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#ar-m)"/>
+    <g class="part" tabindex="0" role="button" data-k="inproj"><rect x="170" y="70" width="180" height="40" rx="8" fill="var(--surface)" stroke="var(--kept)" stroke-width="1.8"/><text x="260" y="88" text-anchor="middle" class="b">in_proj</text><text x="260" y="103" text-anchor="middle" class="m">384 → 1536, split in two</text></g>
+    <path d="M260,110 L260,128 L150,128 L150,148" fill="none" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#ar-m)"/>
+    <path d="M260,110 L260,128 L370,128 L370,148" fill="none" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#ar-m)"/>
+    <text class="m" x="140" y="124" text-anchor="end">x · 768 (content)</text><text class="m" x="380" y="124">z · 768 (gate)</text>
+    <g class="part" tabindex="0" role="button" data-k="conv"><rect x="70" y="150" width="160" height="40" rx="8" fill="var(--surface)" stroke="var(--kept)" stroke-width="1.8"/><text x="150" y="168" text-anchor="middle" class="b">causal conv</text><text x="150" y="183" text-anchor="middle" class="m">last 4 tokens, per channel</text></g>
+    <line x1="150" y1="190" x2="150" y2="208" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#ar-m)"/>
+    <g class="part" tabindex="0" role="button" data-k="silu"><rect x="70" y="210" width="160" height="32" rx="8" fill="var(--surface)" stroke="var(--kept)" stroke-width="1.8"/><text x="150" y="231" text-anchor="middle" class="b">SiLU</text></g>
+    <line x1="150" y1="242" x2="150" y2="262" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#ar-m)"/>
+    <g class="part" tabindex="0" role="button" data-k="ssm"><rect x="60" y="264" width="180" height="76" rx="10" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="2.2"/><text x="150" y="292" text-anchor="middle" class="b">selective SSM</text><text x="150" y="310" text-anchor="middle" class="m">memory h: 768 × N</text><text x="150" y="326" text-anchor="middle" class="m">(what var1 / var2 change)</text></g>
+    <path d="M150,340 L150,372 L238,372" fill="none" stroke="var(--accent)" stroke-width="1.8" marker-end="url(#ar-a)"/>
+    <g class="part" tabindex="0" role="button" data-k="gate"><rect x="290" y="150" width="160" height="40" rx="8" fill="var(--surface)" stroke="var(--kept)" stroke-width="1.8"/><text x="370" y="168" text-anchor="middle" class="b">gate z</text><text x="370" y="183" text-anchor="middle" class="m">after SiLU</text></g>
+    <path d="M370,190 L370,372 L282,372" fill="none" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#ar-m)"/>
+    <g class="part" tabindex="0" role="button" data-k="mul"><circle cx="260" cy="372" r="20" fill="var(--surface)" stroke="var(--kept)" stroke-width="1.8"/><text x="260" y="378" text-anchor="middle" class="b" style="font-size:16px">×</text></g>
+    <line x1="260" y1="392" x2="260" y2="418" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#ar-m)"/>
+    <g class="part" tabindex="0" role="button" data-k="out"><rect x="170" y="420" width="180" height="40" rx="8" fill="var(--surface)" stroke="var(--kept)" stroke-width="1.8"/><text x="260" y="438" text-anchor="middle" class="b">out_proj</text><text x="260" y="453" text-anchor="middle" class="m">768 → 384</text></g>
+    <line x1="260" y1="460" x2="260" y2="486" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#ar-m)"/>
+    <rect x="170" y="488" width="180" height="36" rx="8" fill="var(--surface)" stroke="var(--fg)" stroke-width="1.5"/><text x="260" y="510" text-anchor="middle" class="b">output · 384 numbers</text>
+  </svg></div>
+  <figcaption>Everything in the layer is standard except the teal block. The layer's own memory is the 768 × N state plus the last 4 inputs of the convolution: 15,360 numbers at N = 16, however long the text.</figcaption></figure>
+  <div class="panel" id="part-info" aria-live="polite"><b>Click a block.</b> <span id="part-text">The gate, the convolution and the two linear maps are helpers; the selective SSM is the long-range memory.</span></div>
+</section>
+
+<section id="s5">
+  <h2>5. The whole model</h2>
+  <p>Layers are stacked, and each has its <b>own</b> memory and its own parameters. The model in the notebooks has 6 layers and 5.81 million parameters.
+  Two directions are easy to mix up: <b>depth</b> (which layer) and <b>time</b> (which token).</p>
+  <figure><div class="fig"><svg class="d" viewBox="0 0 640 400" role="img" aria-label="A grid with layers as rows and tokens as columns. Each layer's memory flows along time; each layer feeds the next layer upward.">
+    <text class="b" x="320" y="16" text-anchor="middle">output layer: a score for every possible next token</text>
+    <g id="grid-g"></g>
+    <text class="b" x="320" y="394" text-anchor="middle">embedding: token id → vector of 384 numbers</text>
+  </svg></div>
+  <figcaption>Horizontal arrows: a layer's memory moves along the text. Vertical arrows: a layer's output becomes the next layer's input. Each layer is "RMSNorm, Mamba block, plus a residual connection" (the layer adds its result to its input, which keeps training stable).</figcaption></figure>
+  <ul>
+    <li>Memory while reading is <code>6 layers × (768 × 16 + 768 × 4) = 92,160</code> numbers, independent of text length.</li>
+    <li>The output layer shares its weights with the embedding ("tied").</li>
+    <li>While <b>generating</b>, one token goes up through the 6 layers and each layer updates its memory. While <b>training</b>, all tokens are processed at once (next section).</li>
+  </ul>
+</section>
+
+<section id="s6">
+  <h2>6. Training versus generating: the scan</h2>
+  <p>The update looks sequential (<code>h(t)</code> needs <code>h(t−1)</code>), but it can be computed for many tokens at once with a <b>scan</b>, a running calculation built from
+  cumulative sums. Our code does this in <b>chunks of 8 tokens</b>.</p>
+  <figure><div class="fig"><svg class="d" viewBox="0 0 600 150" role="img" aria-label="Twenty-four tokens in three chunks of eight; the memory at the end of each chunk is carried into the next.">
+    <g id="scan-g"></g>
+  </svg></div>
+  <figcaption>Inside a chunk all 8 tokens are handled at once; between chunks the memory is handed over. var2 reuses exactly this scan, started from a given memory.</figcaption></figure>
+  <p>This is why N costs real time and memory in our code: the scan builds temporary tensors of shape <code>(batch, length, 768, N)</code>. We measured that the state-dependent
+  part is 80 to 100% of a training step. The official Mamba hides it in a custom GPU kernel; ours is plain PyTorch, slower and heavier but readable and easy to change.</p>
+</section>
+
+<section id="s7">
+  <h2>7. Why copying is hard for Mamba</h2>
+  <p>Task: read a random string, then repeat it exactly. To copy n symbols, all n must still be in memory when it is time to write them out. A Transformer simply looks back.
+  Mamba only has its fixed state. The paper this project follows (<code>cot.pdf</code>) shows that Mamba's copying gets worse as strings get longer or the model gets smaller.</p>
+  <div class="panel">
+    <div class="ctl"><label>string length n <span class="v" id="cp-nv">12</span><input id="cp-n" type="range" min="3" max="24" step="1" value="12"></label></div>
+    <div class="row-l">Transformer: every symbol stays available</div><div class="chips" id="cp-tf"></div>
+    <div class="row-l">Mamba, toy memory with <b>12 slots</b> (symbols past the limit are overwritten)</div><div class="chips" id="cp-mb"></div>
+    <p id="cp-note" style="color:var(--muted);font-size:.9rem"></p>
+  </div>
+  <p class="note">A toy picture of the idea only. A real state is a compressed summary, and its true capacity depends on N, the width and the depth; no capacity number is claimed here.</p>
+  <p><b>The project's idea:</b> instead of one fixed memory size for the whole text, make the memory larger as the text gets longer, so short stretches stay cheap and the capacity is there when it is needed.</p>
+</section>
+
+<section id="s8">
+  <h2>8. The two tasks we test on</h2>
+  <p>Both come from published code that we adapted. In both, the model is trained to predict the next token, then scored on how exactly it reproduces the right answer.</p>
+  <h3>8.1 Copy task</h3>
+  <p>Symbols: <code>$</code> start, <code>|</code> separator, <code>.</code> end, <code>*</code> padding. The loss is counted only on the answer and the end symbol (the first half is random, so predicting it teaches nothing). Green chips are where the loss is counted.</p>
+  <div class="panel">
+    <div class="chips" id="cp-ex"></div>
+    <div class="chips" id="cp-pred"></div>
+    <div class="ctl"><button id="cp-corrupt" type="button">Make the model get one letter wrong</button></div>
+    <p id="cp-score" class="big"></p>
+    <p style="color:var(--muted);font-size:.88rem">Scoring is "teacher forcing": the model is fed the correct text and we check its prediction for each next token. <code>str_acc</code> counts an example as right only if the whole answer is right; <code>char_acc</code> is the fraction of correct letters. Both are reported per string length. Training uses strings of 5 to 40 letters, one example per context.</p>
+  </div>
+  <h3>8.2 Chain of thought: longest increasing subsequence</h3>
+  <p>The input is a list of numbers; the answer is the length of the longest strictly increasing subsequence. With chain of thought the model writes the working out first.
+  That gives it a scratchpad, but makes the sequence about twice as long. A sequence only counts as correct if <b>every</b> token after the first <code>&lt;sep&gt;</code> is right.</p>
+  <div class="panel">
+    <div class="ctl"><label>numbers (space separated, up to 14)<input id="lis-in" type="text" value="3 1 4 1 5"></label></div>
+    <div class="err" id="lis-err"></div>
+    <div class="row-l">Direct: jump to the answer</div><div class="chips" id="lis-d"></div>
+    <div class="row-l">Chain of thought: LIS ending at each position, then the answer</div><div class="chips" id="lis-c"></div>
+  </div>
+</section>
+
+<section id="s9">
+  <h2>9. Variation 1: state size changes with depth</h2>
+  <p>Standard Mamba uses the same N in every layer. <b>var1</b> keeps the <i>total</i> fixed and spreads it unevenly: small N in early layers, large N in late layers.
+  Within a layer N does not change over time. The hypothesis: early layers do local work the convolution already covers, while late layers must carry long-range information.</p>
+  <figure><div class="fig"><svg class="d" id="v1-svg" viewBox="0 0 640 290" role="img" aria-label="State size N per layer: 16 in every layer for standard Mamba, and 5, 9, 13, 19, 23, 27 for variation 1; both total 96."></svg></div>
+  <figcaption>Same total (96) and the same parameter count. Kept exactly as originally written in <code>var1/</code> and selected with <code>--model mamba_var1</code>.</figcaption></figure>
+</section>
+
+<section id="s10">
+  <h2>10. Variation 2: state size grows along the sequence</h2>
+  <p><b>var2</b> changes N over <i>time</i> instead of depth. The state starts small and gets bigger at chosen token positions, up to a cap. A schedule is a list of
+  <code>start_token:N</code> pairs; the last N is the cap, so memory is bounded. The same schedule is used in every layer. Edit it, then move the slider.</p>
+  <div class="panel">
+    <div class="ctl">
+      <label>schedule (start_token:N, comma separated)<input id="sc-in" type="text" value="0:8,16:16,32:32,64:64" spellcheck="false"></label>
+      <label>token position t <span class="v" id="sc-tv">40</span><input id="sc-t" type="range" min="0" max="127" step="1" value="40"></label>
+    </div>
+    <div class="err" id="sc-err"></div>
+    <svg class="d" id="sc-chart" viewBox="0 0 640 230" role="img" aria-label="State size N against token position for the chosen schedule, with a cursor at the chosen token."></svg>
+    <p id="sc-seg" style="margin-top:.2rem"></p>
+    <h3 style="margin-top:.8rem">The memory at this token</h3>
+    <div class="legend"><span><i style="background:var(--accent)"></i>memory in use from the start</span><span><i style="background:var(--kept)"></i>kept from before the last switch</span><span><i style="background:var(--grow)"></i>new at the last switch (starts at zero)</span><span><i style="background:var(--surface);border-style:dashed"></i>parameters exist, not used yet</span></div>
+    <div class="fig"><svg class="d" id="sc-grid" viewBox="0 0 640 120" role="img" aria-label="Six example channels, each with the memory dimensions drawn as cells."></svg></div>
+    <h3>What it costs</h3>
+    <div class="ctl"><span class="note" style="margin:0">Counts of state numbers per channel, <b>not</b> measured time. They show the shape of the saving, which shrinks as texts get long and the state sits at the cap.</span></div>
+    <svg class="d" id="sc-cost" viewBox="0 0 640 230" role="img" aria-label="Cumulative state numbers processed by the schedule compared with a constant state at the cap."></svg>
+    <p id="sc-cost-note" style="margin-top:.2rem"></p>
+    <div class="tw"><table id="sc-table"></table></div>
+  </div>
+  <h3>How the code does it</h3>
+  <p>When the size grows, the new memory numbers are <b>appended with the value zero</b> and the old ones are <b>kept exactly</b>. Nothing is erased or converted.</p>
+  <figure><div class="fig"><svg class="d" viewBox="0 0 640 210" role="img" aria-label="A text of 70 tokens cut into four segments with N = 8, 16, 32, 64; the memory is zero-padded at each boundary and carried on.">
+    <g id="seg-g"></g>
+  </svg></div>
+  <figcaption>The sequence is cut into segments of constant N and processed one after another. For each segment: (1) use only the first N parameters of each row, (2) zero-pad the memory from the old N to the new N, (3) run the normal chunked scan from that memory and keep the final memory.</figcaption></figure>
+  <ul>
+    <li><b>Parameters are allocated for the cap.</b> A late stage may use all of them; an early segment uses the first N of each row. So var2 has more parameters than a standard N = 16 model (roughly 11 to 16% more) and the same number as a standard model at N = cap.</li>
+    <li><b>Cost follows the schedule.</b> In a segment with small N the scan and the projection handle only N numbers per channel.</li>
+    <li><b>Everything else is the standard model:</b> embedding, norms, convolution, gating, projections, output layer, and the update formula. <code>GrowingMambaLM</code> builds a normal model and swaps each layer's SSM for a <code>GrowingSSM</code> (<code>mamba_growing.py</code>, 96 lines).</li>
+  </ul>
+  <h3>What is tested</h3>
+  <ul>
+    <li>A one-stage schedule gives exactly the standard output.</li>
+    <li>A multi-stage schedule equals a reference that always uses the full size but zeroes write and read for not-yet-active dimensions.</li>
+    <li>The model is causal, also across a switch; every parameter gets gradients, including the late ones.</li>
+  </ul>
+  <p class="note">Limits: no token-by-token generation yet, no <code>--compile</code> support, and the cost savings are designed but not yet benchmarked. There are no accuracy results.</p>
+</section>
+
+<section id="s11">
+  <h2>11. How the code is organised</h2>
+  <pre>deeplearning/
+├─ mamba_model.py          STANDARD Mamba: RMSNorm → SelectiveSSM (memory) → MambaBlock (layer) → ResidualBlock → MambaLM (model), plus the scans
+├─ 01_mamba_train.ipynb    trains standard Mamba on Shakespeare;  02_… generates text with it
+├─ var1/                   VARIATION 1, exactly as originally written (model + its two notebooks)
+├─ mamba_growing.py        VARIATION 2 (GrowingSSM, GrowingMambaLM, scan_with_state)
+├─ test_growing.py         tests for variation 2
+├─ copy_eval/              COPY task: data_utils (examples, loss mask), train_utils, test_utils (scoring),
+│                          model_utils (builds the 3 models), main.py (command line), sanity_checks.py
+├─ cot_eval/               CHAIN-OF-THOUGHT task: LIS/data.py, LIS/dataloader.py, LIS/eval.py, train.py, test.py, model_utils.py
+└─ docs/                   UNDERSTANDING.md (this guide as text)</pre>
+  <p>Choose the model in either harness; everything else (data, loss, optimiser, scoring) is identical, so differences in results come from the memory design only.</p>
+  <div class="cmd"><pre id="cmd1">--model mamba                                   # standard Mamba
+--model mamba_var1 --state_schedule linear      # state size changes with depth
+--model mamba_var2 --schedule "0:8,16:16,32:32,64:64"   # state size grows along the sequence</pre><button type="button" data-copy="cmd1">Copy</button></div>
+  <p><b>The planned comparison:</b> for each string length, var2 against standard Mamba with constant N = 8, 16, 32, 64. The question is at which lengths var2 reaches the accuracy of the large constant models (which have the same parameters as var2 at N = 64) while using less memory and compute on average, or beats a constant model of the same average cost.</p>
+  <h3>Glossary</h3>
+  <div class="tw"><table>
+    <tr><th>Term</th><th>Meaning</th></tr>
+    <tr><td>token</td><td>one unit of input: a character, number or word piece</td></tr>
+    <tr><td>model width D</td><td>size of the vector representing a token between layers (384 in the notebooks)</td></tr>
+    <tr><td>inner width</td><td>2 × D; the width inside a Mamba block, also the number of memory channels</td></tr>
+    <tr><td>state h</td><td>the memory of one layer: channels × N numbers</td></tr>
+    <tr><td>state size N</td><td>memory numbers per channel. The quantity this project varies</td></tr>
+    <tr><td>selective</td><td>Δ, B and C are computed from each token</td></tr>
+    <tr><td>layer</td><td>RMSNorm + Mamba block + residual; the model stacks several</td></tr>
+    <tr><td>scan / chunk</td><td>the parallel way to run the update over many tokens / the 8 tokens it handles at once</td></tr>
+    <tr><td>teacher forcing</td><td>scoring by feeding the correct text and checking each next-token prediction</td></tr>
+    <tr><td>str_acc / char_acc</td><td>whole-answer-correct rate / per-letter-correct rate</td></tr>
+    <tr><td>schedule, cap</td><td>the start_token:N list that tells var2 how the state grows; the largest N in it</td></tr>
+    <tr><td>baseline</td><td>standard Mamba with a constant N, the model the variations are compared to</td></tr>
+  </table></div>
+</section>
+<footer>Source of truth: <code>docs/UNDERSTANDING.md</code> in the repository. Numbers are from the code and the notebooks.</footer>
+</div>
+
+<script>
+/*PURE*/
+function toyRun(xs, decay, write){ let h=0; return xs.map(function(x){ h = decay*h + write*x; return h; }); }
+function retention(delta, n){ return Math.exp(-delta*n); }
+function parseSched(s){
+  var parts = s.split(',').map(function(p){return p.trim();}).filter(Boolean), out = [];
+  parts.forEach(function(p){ var m = p.match(/^(\d+)\s*:\s*(\d+)$/); if(!m) throw new Error('Use start:N pairs, for example 0:8,16:16'); out.push([+m[1], +m[2]]); });
+  if(!out.length) throw new Error('Give at least one start:N pair');
+  if(out[0][0] !== 0) throw new Error('The first start must be 0');
+  for(var i=1;i<out.length;i++){
+    if(out[i][0] <= out[i-1][0]) throw new Error('Starts must increase');
+    if(out[i][1] < out[i-1][1]) throw new Error('N must not shrink');
+  }
+  out.forEach(function(p){ if(p[1] < 1 || p[1] > 128) throw new Error('N must be between 1 and 128'); });
+  return out;
+}
+function nAt(sched, t){ var n = sched[0][1]; sched.forEach(function(p){ if(t >= p[0]) n = p[1]; }); return n; }
+function segAt(sched, t){ var k = 0; sched.forEach(function(p, i){ if(t >= p[0]) k = i; }); return k; }
+function costSum(sched, L){ var s = 0; for(var t=0;t<L;t++) s += nAt(sched, t); return s; }
+function capOf(sched){ return sched[sched.length-1][1]; }
+function lisChain(a){ var c = []; for(var i=0;i<a.length;i++){ var b = 1; for(var j=0;j<i;j++) if(a[j] < a[i]) b = Math.max(b, c[j]+1); c.push(b); } return c; }
+/*ENDPURE*/
+</script>
+
+<script>
+(function(){
+var NS = 'http://www.w3.org/2000/svg';
+function $(s){ return document.querySelector(s); }
+function mk(tag, attrs, parent, text){
+  var e = document.createElementNS(NS, tag);
+  for(var k in attrs) e.setAttribute(k, attrs[k]);
+  if(text !== undefined) e.textContent = text;
+  if(parent) parent.appendChild(e);
+  return e;
+}
+function clear(e){ while(e.firstChild) e.removeChild(e.firstChild); }
+function fmt(v){ return (Math.round(v*100)/100).toString(); }
+function chip(parent, text, cls){ var s = document.createElement('span'); s.className = 'chip ' + (cls||''); s.textContent = text; parent.appendChild(s); return s; }
+function safe(f){ try{ f(); }catch(e){ if(window.console) console.error(e); } }
+
+/* 2. toy state update */
+safe(function(){
+  var dEl=$('#toy-decay'), wEl=$('#toy-write'), iEl=$('#toy-in'), svg=$('#toy-svg'), tbl=$('#toy-tbl');
+  function run(){
+    var d=+dEl.value, w=+wEl.value;
+    $('#toy-dv').textContent = d.toFixed(2); $('#toy-wv').textContent = w.toFixed(2);
+    var xs = iEl.value.split(/[ ,]+/).filter(Boolean).map(Number).filter(function(v){return !isNaN(v);}).slice(0,12);
+    var hs = toyRun(xs, d, w);
+    clear(svg);
+    var m = Math.max.apply(null, xs.concat(hs).map(Math.abs).concat([1])), top=24, base=190, hgt=150, bw=640/Math.max(xs.length,4);
+    mk('line',{x1:0,y1:base,x2:640,y2:base,stroke:'var(--line)','stroke-width':1.5},svg);
+    xs.forEach(function(x,i){
+      var cx = i*bw + bw/2, a = Math.abs(x)/m*hgt, b = Math.abs(hs[i])/m*hgt;
+      mk('rect',{x:cx-bw*0.36,y:base-a,width:bw*0.3,height:a,fill:'var(--code)',stroke:'var(--line)'},svg);
+      mk('rect',{x:cx+bw*0.04,y:base-b,width:bw*0.3,height:b,fill:'var(--accent)'},svg);
+      mk('text',{x:cx,y:base+16,'text-anchor':'middle',class:'m'},svg,'t='+(i+1));
+      mk('text',{x:cx+bw*0.19,y:base-b-5,'text-anchor':'middle'},svg,fmt(hs[i]));
+    });
+    var html = '<tr><th>t</th><th class="n">x(t)</th><th>memory update</th><th class="n">h(t)</th></tr>', prev=0;
+    xs.forEach(function(x,i){ html += '<tr><td>'+(i+1)+'</td><td class="n">'+fmt(x)+'</td><td class="mono">'+fmt(d)+' × '+fmt(prev)+' + '+fmt(w)+' × '+fmt(x)+'</td><td class="n">'+fmt(hs[i])+'</td></tr>'; prev=hs[i]; });
+    tbl.innerHTML = html;
+    $('#toy-note').textContent = xs.length ? 'A value written at step 1 is multiplied by the decay once per later step. With decay ' + d.toFixed(2) + ' it keeps ' + Math.round(Math.pow(d,3)*100) + '% of its size after 3 more steps.' : 'Enter a few numbers.';
+  }
+  [dEl,wEl,iEl].forEach(function(e){ e.addEventListener('input', run); }); run();
+});
+
+/* 2b. forgetting speed per memory dimension */
+safe(function(){
+  var el=$('#dim-delta'), svg=$('#dim-svg');
+  function run(){
+    var dl=+el.value; $('#dim-dv').textContent = dl.toFixed(2); clear(svg);
+    var bw=640/16, base=170, hgt=130;
+    mk('line',{x1:0,y1:base,x2:640,y2:base,stroke:'var(--line)','stroke-width':1.5},svg);
+    for(var n=1;n<=16;n++){
+      var r = retention(dl, n), x=(n-1)*bw;
+      mk('rect',{x:x+6,y:base-r*hgt,width:bw-12,height:r*hgt,fill:'var(--accent)',opacity:0.35+0.65*r},svg);
+      mk('text',{x:x+bw/2,y:base+16,'text-anchor':'middle',class:'m'},svg,String(n));
+      mk('text',{x:x+bw/2,y:base-r*hgt-5,'text-anchor':'middle',style:'font-size:10.5px'},svg,Math.round(r*100)+'%');
+    }
+    mk('text',{x:320,y:202,'text-anchor':'middle',class:'m'},svg,'memory dimension (A = −1 … −16)');
+    $('#dim-note').textContent = 'Per token, dimension 1 keeps ' + Math.round(retention(dl,1)*100) + '% of its value and dimension 16 keeps ' + Math.round(retention(dl,16)*100) + '%. Δ itself is computed from each token, so the model can change this speed token by token.';
+  }
+  el.addEventListener('input', run); run();
+});
+
+/* 4. clickable layer parts */
+safe(function(){
+  var info = {
+    in:'The layer receives one vector of 384 numbers for every token.',
+    inproj:'A linear map from 384 to 1536 numbers, split into two halves of 768: the content x and the gate z.',
+    conv:'A causal convolution: each channel is mixed with its previous 3 tokens (a window of 4). It never sees future tokens. Cheap local context.',
+    silu:'A smooth non-linearity (a soft on/off) applied to the content before the memory.',
+    ssm:'The selective state space model. It computes Δ, B and C from the content, updates the memory h (768 channels × N numbers) token by token, and reads out y. This is the only part var1 and var2 change.',
+    gate:'The gate z, passed through SiLU, decides how much of the memory output is let through.',
+    mul:'Element-wise multiplication: the SSM output times the gate.',
+    out:'A linear map from 768 back to the model width of 384, so layers can be stacked.'
+  };
+  Array.prototype.forEach.call(document.querySelectorAll('.part'), function(g){
+    function show(){ $('#part-text').textContent = info[g.getAttribute('data-k')]; }
+    g.addEventListener('click', show);
+    g.addEventListener('keydown', function(e){ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); show(); } });
+  });
+});
+
+/* 5. depth x time grid */
+safe(function(){
+  var g=$('#grid-g'), cols=8, rows=6, cw=56, ch=34, x0=96, y0=34, gx=66, gy=54;
+  for(var r=0;r<rows;r++){
+    var y = y0 + (rows-1-r)*gy;
+    mk('text',{x:x0-14,y:y+ch/2+4,'text-anchor':'end',class:'b'},g,'layer '+(r+1));
+    for(var c=0;c<cols;c++){
+      var x = x0 + c*gx;
+      mk('rect',{x:x,y:y,width:cw,height:ch,rx:6,fill:'var(--accent-soft)',stroke:'var(--accent)','stroke-width':1.5},g);
+      if(c<cols-1) mk('line',{x1:x+cw,y1:y+ch/2,x2:x+gx,y2:y+ch/2,stroke:'var(--accent)','stroke-width':1.6,'marker-end':'url(#ar-a)'},g);
+      if(r<rows-1) mk('line',{x1:x+cw/2,y1:y,x2:x+cw/2,y2:y-(gy-ch)+2,stroke:'var(--muted)','stroke-width':1.4,'marker-end':'url(#ar-m)'},g);
+    }
+  }
+  mk('text',{x:x0+3*gx+cw,y:y0+(rows-1)*gy+ch+16,'text-anchor':'middle',class:'m'},g,'time: tokens →  (each box = one layer\'s memory after that token)');
+  mk('text',{x:x0+cw/2,y:y0+(rows-1)*gy-10,class:'m','text-anchor':'start'},g,'');
+});
+
+/* 6. scan chunks */
+safe(function(){
+  var g=$('#scan-g'), cs=17, gap=3, chunkW=8*(cs+gap), space=44, x0=(600-(3*chunkW+2*space))/2;
+  for(var k=0;k<3;k++){
+    var cx = x0 + k*(chunkW+space);
+    for(var i=0;i<8;i++) mk('rect',{x:cx+i*(cs+gap),y:44,width:cs,height:cs,rx:3,fill:'var(--kept-soft)',stroke:'var(--kept)'},g);
+    mk('path',{d:'M'+cx+',70 v6 h'+(chunkW-gap)+' v-6',fill:'none',stroke:'var(--muted)','stroke-width':1.3},g);
+    mk('text',{x:cx+(chunkW-gap)/2,y:94,'text-anchor':'middle',class:'b'},g,'chunk '+(k+1));
+    mk('text',{x:cx+(chunkW-gap)/2,y:110,'text-anchor':'middle',class:'m'},g,'8 tokens at once');
+    if(k<2) mk('line',{x1:cx+chunkW-gap+2,y1:52,x2:cx+chunkW+space-2,y2:52,stroke:'var(--accent)','stroke-width':2,'marker-end':'url(#ar-a)'},g);
+    if(k<2) mk('text',{x:cx+chunkW+space/2-gap,y:36,'text-anchor':'middle',class:'m',style:'font-size:11px'},g,'memory h');
+  }
+  mk('text',{x:300,y:140,'text-anchor':'middle',class:'m'},g,'tokens, left to right');
+});
+
+/* 7. copy capacity toy */
+safe(function(){
+  var letters = 'hbuzgbbpmztwcgjmpoxqkvdl'.split(''), CAP = 12, el=$('#cp-n');
+  function run(){
+    var n=+el.value; $('#cp-nv').textContent = n;
+    var a=$('#cp-tf'), b=$('#cp-mb'); a.innerHTML=''; b.innerHTML='';
+    for(var i=0;i<n;i++){ chip(a, letters[i], 'kept'); chip(b, letters[i], i<CAP ? 'kept' : 'lost'); }
+    $('#cp-note').textContent = n <= CAP ? 'All ' + n + ' symbols fit in the toy memory, so the copy can succeed.' :
+      'The toy memory holds ' + CAP + ' symbols, so ' + (n-CAP) + ' of the ' + n + ' are overwritten and the copy fails after symbol ' + CAP + '.';
+  }
+  el.addEventListener('input', run); run();
+});
+
+/* 8. copy example and scoring */
+safe(function(){
+  var s = 'hbuzg', bad = false;
+  function run(){
+    var ex=$('#cp-ex'), pr=$('#cp-pred'); ex.innerHTML=''; pr.innerHTML='';
+    var toks = ['$'].concat(s.split(''), ['|'], s.split(''), ['.']);
+    toks.forEach(function(t,i){ chip(ex, t, i<=s.length+1 ? (i===0||i===s.length+1?'sep':'') : 'loss'); });
+    var pred = s.split(''); if(bad) pred[2] = 'x';
+    var lbl = document.createElement('span'); lbl.className='row-l'; lbl.textContent='model predicts: '; lbl.style.marginRight='.4rem'; pr.appendChild(lbl);
+    pred.concat(['.']).forEach(function(t,i){ chip(pr, t, i<s.length && pred[i]!==s[i] ? 'bad' : 'loss'); });
+    var ok = pred.filter(function(t,i){return t===s[i];}).length;
+    $('#cp-score').textContent = 'str_acc = ' + (ok===s.length?1:0) + '    char_acc = ' + ok + '/' + s.length + ' = ' + (ok/s.length).toFixed(2);
+    $('#cp-corrupt').textContent = bad ? 'Make the model get it all right' : 'Make the model get one letter wrong';
+  }
+  $('#cp-corrupt').addEventListener('click', function(){ bad = !bad; run(); }); run();
+});
+
+/* 8b. LIS */
+safe(function(){
+  var el=$('#lis-in');
+  function run(){
+    var a = el.value.split(/[ ,]+/).filter(Boolean).map(Number), err=$('#lis-err');
+    if(!a.length || a.some(function(v){return !isFinite(v) || Math.floor(v)!==v;}) || a.length>14){ err.textContent='Enter 1 to 14 whole numbers separated by spaces.'; return; }
+    err.textContent='';
+    var c = lisChain(a), ans = Math.max.apply(null,c), d=$('#lis-d'), ch=$('#lis-c'); d.innerHTML=''; ch.innerHTML='';
+    a.forEach(function(v){ chip(d, v, ''); chip(ch, v, ''); });
+    chip(d,'<sep>','sep'); chip(d, ans, 'loss'); chip(ch,'<sep>','sep');
+    c.forEach(function(v){ chip(ch, v, 'loss'); }); chip(ch,'<sep>','sep'); chip(ch, ans, 'loss');
+  }
+  el.addEventListener('input', run); run();
+});
+
+/* 9. var1 bars */
+safe(function(){
+  var svg=$('#v1-svg'), std=[16,16,16,16,16,16], v1=[5,9,13,19,23,27], u=7.4, rowH=34, top=44;
+  [[std,'standard Mamba',20],[v1,'var1 (linear)',350]].forEach(function(p){
+    var ns=p[0], x0=p[2]+54;
+    mk('text',{x:p[2],y:24,class:'b'},svg,p[1]);
+    ns.forEach(function(n,i){
+      var y = top + i*rowH;
+      mk('text',{x:p[2],y:y+18,class:'m'},svg,'layer '+(i+1));
+      mk('rect',{x:x0,y:y+4,width:n*u,height:22,rx:4,fill:p[2]===20?'var(--accent-soft)':'var(--grow-soft)',stroke:p[2]===20?'var(--accent)':'var(--grow)','stroke-width':1.5},svg);
+      mk('text',{x:x0+n*u+6,y:y+20},svg,'N = '+n);
+    });
+    mk('text',{x:p[2],y:top+6*rowH+22,class:'b'},svg,'total = '+ns.reduce(function(a,b){return a+b;},0));
+  });
+});
+
+/* 10. var2 interactive */
+safe(function(){
+  var L = 128, sInput=$('#sc-in'), tInput=$('#sc-t'), sched = parseSched(sInput.value);
+  function setErr(m){ $('#sc-err').textContent = m || ''; }
+  function chart(){
+    var svg=$('#sc-chart'); clear(svg);
+    var x0=56, x1=620, yb=190, yt=22, cap=capOf(sched), t=+tInput.value;
+    var X=function(i){ return x0 + (x1-x0)*i/(L-1); }, Y=function(n){ return yb - (yb-yt)*n/cap; };
+    mk('line',{x1:x0,y1:yb,x2:x1,y2:yb,stroke:'var(--line)','stroke-width':1.5},svg); mk('line',{x1:x0,y1:yt,x2:x0,y2:yb,stroke:'var(--line)','stroke-width':1.5},svg);
+    var d='M'+X(0)+','+Y(nAt(sched,0));
+    for(var i=1;i<L;i++){ var a=nAt(sched,i-1), b=nAt(sched,i); if(a!==b) d+=' L'+X(i)+','+Y(a)+' L'+X(i)+','+Y(b); }
+    d+=' L'+X(L-1)+','+Y(nAt(sched,L-1));
+    mk('path',{d:d,fill:'none',stroke:'var(--grow)','stroke-width':3},svg);
+    sched.forEach(function(p){ if(p[0]<L){ mk('text',{x:X(p[0])+4,y:Y(p[1])-6,class:'m',style:'font-size:11px'},svg,'N='+p[1]); } });
+    mk('text',{x:x0-8,y:Y(cap)+4,'text-anchor':'end',class:'m'},svg,String(cap)); mk('text',{x:x0-8,y:yb+4,'text-anchor':'end',class:'m'},svg,'0');
+    mk('text',{x:(x0+x1)/2,y:216,'text-anchor':'middle',class:'m'},svg,'token position t (0 … '+(L-1)+')');
+    mk('text',{x:14,y:106,'text-anchor':'middle',class:'m',transform:'rotate(-90 14 106)'},svg,'state size N');
+    mk('line',{x1:X(t),y1:yt,x2:X(t),y2:yb,stroke:'var(--fg)','stroke-width':1.5,'stroke-dasharray':'4 3'},svg);
+    mk('circle',{cx:X(t),cy:Y(nAt(sched,t)),r:5,fill:'var(--grow)',stroke:'var(--bg)','stroke-width':2},svg);
+  }
+  function seg(){
+    var t=+tInput.value, k=segAt(sched,t), n=sched[k][1], prev = k>0 ? sched[k-1][1] : 0;
+    var end = k+1<sched.length ? sched[k+1][0]-1 : null, startT = sched[k][0];
+    $('#sc-seg').innerHTML = 'At token <b>' + t + '</b> we are in segment ' + (k+1) + ' of ' + sched.length + ' (tokens ' + startT + (end===null ? ' onwards, the cap' : ' to ' + end) + '), so <b>N = ' + n + '</b>. ' +
+      (k===0 ? 'This is the first segment: the memory started at zero.' : 'At the switch the memory grew from ' + prev + ' to ' + n + ' numbers per channel: ' + prev + ' kept, ' + (n-prev) + ' new (zero).');
+  }
+  function grid(){
+    var svg=$('#sc-grid'); clear(svg);
+    var t=+tInput.value, k=segAt(sched,t), n=sched[k][1], prev=k>0?sched[k-1][1]:n, cap=capOf(sched);
+    var cs=Math.max(3,Math.min(16,Math.floor(600/cap)-2)), step=cs+2, rows=6, w=cap*step+70;
+    svg.setAttribute('viewBox','0 0 '+Math.max(w,300)+' '+(rows*step+30));
+    for(var r=0;r<rows;r++){
+      mk('text',{x:0,y:r*step+cs-2,class:'m',style:'font-size:10.5px'},svg,'ch '+(r+1));
+      for(var c=0;c<cap;c++){
+        var o = {x:44+c*step,y:r*step,width:cs,height:cs,rx:2};
+        if(c>=n){ o.fill='var(--surface)'; o.stroke='var(--line)'; o['stroke-dasharray']='2 2'; }
+        else if(k===0){ o.fill='var(--accent)'; o.stroke='var(--accent)'; }
+        else if(c<prev){ o.fill='var(--kept)'; o.stroke='var(--kept)'; }
+        else { o.fill='var(--grow)'; o.stroke='var(--grow)'; }
+        mk('rect',o,svg);
+      }
+    }
+    mk('text',{x:44,y:rows*step+18,class:'m',style:'font-size:11px'},svg,'6 of the 768 channels shown; each row is one channel\'s memory, one cell per memory number (' + cap + ' allocated, ' + n + ' in use)');
+  }
+  function cost(){
+    var svg=$('#sc-cost'); clear(svg);
+    var x0=56, x1=620, yb=190, yt=22, cap=capOf(sched), t=+tInput.value, tot=cap*L;
+    var X=function(i){ return x0 + (x1-x0)*i/(L); }, Y=function(v){ return yb - (yb-yt)*v/tot; };
+    mk('line',{x1:x0,y1:yb,x2:x1,y2:yb,stroke:'var(--line)','stroke-width':1.5},svg); mk('line',{x1:x0,y1:yt,x2:x0,y2:yb,stroke:'var(--line)','stroke-width':1.5},svg);
+    var pts=[[0,0]], s=0, poly='M'+X(0)+','+Y(0);
+    for(var i=1;i<=L;i++){ s+=nAt(sched,i-1); poly+=' L'+X(i)+','+Y(s); pts.push([i,s]); }
+    mk('path',{d:poly+' L'+X(L)+','+Y(cap*L)+' L'+X(0)+','+Y(0)+' Z',fill:'var(--accent-soft)',opacity:0.8},svg);
+    mk('path',{d:poly,fill:'none',stroke:'var(--accent)','stroke-width':3},svg);
+    mk('line',{x1:X(0),y1:Y(0),x2:X(L),y2:Y(cap*L),stroke:'var(--muted)','stroke-width':2,'stroke-dasharray':'6 4'},svg);
+    mk('text',{x:x1-4,y:Y(cap*L)+16,'text-anchor':'end',class:'m'},svg,'constant N = '+cap+' (the cap)');
+    mk('text',{x:x1-4,y:Y(pts[L][1])+22,'text-anchor':'end',class:'b',style:'fill:var(--accent)'},svg,'var2 schedule');
+    mk('text',{x:(x0+x1)/2,y:216,'text-anchor':'middle',class:'m'},svg,'tokens read');
+    mk('text',{x:14,y:106,'text-anchor':'middle',class:'m',transform:'rotate(-90 14 106)'},svg,'state numbers processed (count)');
+    mk('line',{x1:X(t+1),y1:yt,x2:X(t+1),y2:yb,stroke:'var(--fg)','stroke-width':1.2,'stroke-dasharray':'4 3'},svg);
+    var used=costSum(sched,t+1), constant=cap*(t+1);
+    $('#sc-cost-note').innerHTML = 'After <b>' + (t+1) + '</b> tokens: var2 has processed <b>' + used + '</b> state numbers per channel against <b>' + constant + '</b> for a constant N = ' + cap + ', <b>' + Math.round((1-used/constant)*100) + '%</b> fewer.';
+    var rows='<tr><th>Text length</th><th class="n">var2</th><th class="n">constant N = '+cap+'</th><th class="n">saving</th></tr>';
+    [32,64,128,256,512,1024].forEach(function(len){ var a=costSum(sched,len), b=cap*len; rows+='<tr><td>'+len+' tokens</td><td class="n">'+a+'</td><td class="n">'+b+'</td><td class="n">'+Math.round((1-a/b)*100)+'%</td></tr>'; });
+    $('#sc-table').innerHTML = rows;
+  }
+  function seg2(){
+    var g=$('#seg-g'); clear(g);
+    var S=[[0,8],[16,16],[32,32],[64,64]], Ltot=70, x0=30, W=580, X=function(t){ return x0+W*t/Ltot; }, h=[10,18,30,48];
+    S.forEach(function(p,i){
+      var a=p[0], b=i+1<S.length?S[i+1][0]:Ltot, ht=h[i];
+      mk('rect',{x:X(a),y:120-ht,width:X(b)-X(a)-2,height:ht,rx:4,fill:'var(--grow-soft)',stroke:'var(--grow)','stroke-width':1.5},g);
+      mk('text',{x:(X(a)+X(b))/2,y:120-ht-6,'text-anchor':'middle',class:'b'},g,'N = '+p[1]);
+      mk('text',{x:(X(a)+X(b))/2,y:146,'text-anchor':'middle',class:'m'},g,'segment '+(i+1));
+      mk('text',{x:(X(a)+X(b))/2,y:162,'text-anchor':'middle',class:'m',style:'font-size:11px'},g,'tokens '+a+'–'+(b-1));
+      if(i<S.length-1){
+        mk('line',{x1:X(b)-6,y1:100,x2:X(b)+8,y2:100,stroke:'var(--grow)','stroke-width':2,'marker-end':'url(#ar-g)'},g);
+      }
+    });
+    mk('text',{x:x0,y:194,class:'m'},g,'At each boundary the memory is zero-padded to the new size and handed on: old numbers kept, new numbers start at zero.');
+  }
+  function all(){ $('#sc-tv').textContent = tInput.value; chart(); seg(); grid(); cost(); }
+  sInput.addEventListener('input', function(){
+    try{ sched = parseSched(sInput.value); setErr(''); all(); }catch(e){ setErr(e.message + ' (showing the last valid schedule)'); }
+  });
+  tInput.addEventListener('input', all); all(); seg2();
+});
+
+/* copy buttons */
+safe(function(){
+  Array.prototype.forEach.call(document.querySelectorAll('button[data-copy]'), function(b){
+    b.addEventListener('click', function(){
+      var pre = document.getElementById(b.getAttribute('data-copy')), txt = pre.textContent;
+      function sel(){ var r=document.createRange(); r.selectNodeContents(pre); var s=window.getSelection(); s.removeAllRanges(); s.addRange(r); b.textContent='Selected'; }
+      if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(function(){ b.textContent='Copied'; }, sel); } else { sel(); }
+      setTimeout(function(){ b.textContent='Copy'; }, 1800);
+    });
+  });
+});
+})();
+</script>
