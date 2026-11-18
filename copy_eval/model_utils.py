@@ -1,3 +1,4 @@
+import importlib.util
 import math
 import pathlib
 import sys
@@ -6,9 +7,11 @@ import torch
 import torch.nn as nn
 import torch.utils.checkpoint  # MambaLM.grad_checkpoint uses torch.utils.checkpoint
 
-# our pure-PyTorch Mamba lives one directory up (shared with the train/inference notebooks)
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
-from mamba_model import MambaConfig, MambaLM, SelectiveSSM
+# our pure-PyTorch Mamba (standard, var2) lives one directory up, var1 in ../var1
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from mamba_model import MambaConfig, MambaLM
+from mamba_growing import GrowingMambaLM, parse_schedule
 
 
 def init_like_mamba_ssm(model: MambaLM, initializer_range: float = 0.02):
@@ -35,7 +38,7 @@ def init_like_mamba_ssm(model: MambaLM, initializer_range: float = 0.02):
 
     # 2. dt_proj weight: uniform(+-dt_rank^-0.5)   (dt_init="random", dt_scale=1.0)
     for m in model.modules():
-        if isinstance(m, SelectiveSSM):
+        if hasattr(m, "dt_proj"):                     # every selective SSM layer (standard, var1, var2)
             std = m.cfg.dt_rank ** -0.5
             nn.init.uniform_(m.dt_proj.weight, -std, std)
 
@@ -50,22 +53,47 @@ def init_like_mamba_ssm(model: MambaLM, initializer_range: float = 0.02):
     nn.init.normal_(model.embedding.weight, std=initializer_range)
 
 
-def get_model(args, tokenizer):
+def load_var1():
+    """var1 (depth-varying state, kept untouched in ../var1/) has the same module name as the
+    standard model, so it is loaded under another name."""
+    spec = importlib.util.spec_from_file_location("mamba_var1", ROOT / "var1" / "mamba_model.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["mamba_var1"] = module
+    spec.loader.exec_module(module)
+    return module
 
-    if args.model == "mamba":
-        # mamba_ssm pads the vocab to a multiple of 8 (pad_vocab_size_multiple=8)
-        vocab_size = len(tokenizer)
-        vocab_size += (-vocab_size) % 8
-        cfg = MambaConfig(
-                vocab_size=vocab_size,
-                d_model=args.hidden_size,
-                n_layer=args.layers,
-                d_state=args.state_dim,
-                )
-        model = MambaLM(cfg)
-        init_like_mamba_ssm(model)
-        model.grad_checkpoint = args.grad_checkpoint  # recompute activations: same maths, less memory
+
+def build_model(name, vocab_size, d_model, n_layer, d_state, state_schedule, schedule, grad_checkpoint, compile):
+    """The three models that are compared, all initialised like mamba_ssm (shared by copy_eval and cot_eval).
+
+    mamba      standard Mamba, state size d_state in every layer
+    mamba_var1 var1: state size varies with depth (state_schedule: "constant" | "linear", mean N = d_state)
+    mamba_var2 var2: state size grows along the sequence (schedule, e.g. "0:8,16:16,32:32,64:64"; last N is the cap)
+    """
+    kw = dict(vocab_size=vocab_size, d_model=d_model, n_layer=n_layer)
+    if name == "mamba":
+        model = MambaLM(MambaConfig(d_state=d_state, **kw))
+        scan_module = sys.modules["mamba_model"]
+    elif name == "mamba_var1":
+        scan_module = load_var1()
+        model = scan_module.MambaLM(scan_module.MambaConfig(d_state=d_state, state_schedule=state_schedule, **kw))
+    elif name == "mamba_var2":
+        schedule = parse_schedule(schedule)
+        model = GrowingMambaLM(MambaConfig(d_state=max(n for _, n in schedule), **kw), schedule)
+        scan_module = None
     else:
-        raise ValueError(f"unknown model '{args.model}'; register new models in get_model")
-
+        raise ValueError(f"unknown model '{name}'")
+    if compile:
+        assert scan_module is not None, "--compile is not implemented for mamba_var2 yet"
+        scan_module.compile_scan()                    # fused scan: same maths, faster
+    init_like_mamba_ssm(model)
+    model.grad_checkpoint = grad_checkpoint           # recompute activations: same maths, less memory
     return model
+
+
+def get_model(args, tokenizer):
+    # mamba_ssm pads the vocab to a multiple of 8 (pad_vocab_size_multiple=8)
+    vocab_size = len(tokenizer)
+    vocab_size += (-vocab_size) % 8
+    return build_model(args.model, vocab_size, args.hidden_size, args.layers, args.state_dim,
+                       args.state_schedule, args.schedule, args.grad_checkpoint, args.compile)

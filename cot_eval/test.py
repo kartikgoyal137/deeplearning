@@ -26,6 +26,12 @@ parser.add_argument('--num_layer', type=int, default=3)
 parser.add_argument('--head', type=int, default=4)
 parser.add_argument('--num_range', type=int, default=11)
 parser.add_argument('--seed', type=int, default=2023)
+parser.add_argument('--grad_checkpoint', action='store_true', default=False)   # (training-only options, kept so get_model works)
+parser.add_argument('--compile', action='store_true', default=False)
+parser.add_argument('--model', default='mamba', choices=['mamba', 'mamba_var1', 'mamba_var2'])
+parser.add_argument('--state_dim', type=int, default=16)
+parser.add_argument('--state_schedule', default='constant', choices=['constant', 'linear'])
+parser.add_argument('--schedule', default='0:8,16:16,32:32,64:64')
 
 args = parser.parse_args()
 

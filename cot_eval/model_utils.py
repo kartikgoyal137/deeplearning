@@ -3,10 +3,9 @@ import sys
 
 import torch.nn as nn
 
-# our pure-PyTorch Mamba and the mamba_ssm-matching init (see ../copy_eval/README.md)
+# the models (standard Mamba, var1, var2) and the mamba_ssm-matching init are shared with copy_eval
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
-from mamba_model import MambaConfig, MambaLM
-from copy_eval.model_utils import init_like_mamba_ssm
+from copy_eval.model_utils import build_model
 
 
 class Mamba(nn.Module):
@@ -14,12 +13,11 @@ class Mamba(nn.Module):
 
     def __init__(self, args):
         super().__init__()
-        cfg = MambaConfig(vocab_size=args.vocab, d_model=args.dmodel, n_layer=args.num_layer)
-        self.lm = MambaLM(cfg)
-        init_like_mamba_ssm(self.lm)
+        self.lm = build_model(args.model, args.vocab, args.dmodel, args.num_layer, args.state_dim,
+                              args.state_schedule, args.schedule, args.grad_checkpoint, args.compile)
 
     def forward(self, idx):
-        return self.lm(idx)[0]    # MambaLM returns (logits, loss)
+        return self.lm(idx)[0]    # the models return (logits, loss)
 
 
 def get_model(args):

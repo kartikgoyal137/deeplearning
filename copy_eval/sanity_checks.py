@@ -27,6 +27,7 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 args = Namespace(
     train_task="copy", eval_task="copy", vocab_size=26, n_gram=0, length_answer=0,
     model="mamba", hidden_size=64, layers=2, state_dim=16, grad_checkpoint=False,
+    compile=False, no_pack=False, state_schedule="constant", schedule="0:8,16:16",
     train_batch_size=4, eval_batch_size=8, eval_num_batches=3,
     min_train_len=5, max_train_len=20, min_eval_len=10, max_eval_len=20,
     context_len=220, eval_context_len=220,

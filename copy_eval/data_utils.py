@@ -90,7 +90,8 @@ def sample_str(len1,n_gram,length_answer,task,vocab_size=26):
     return example_str 
 
 class CopyDataset:
-    def __init__(self, tokenizer, vocab_size=26, n_gram=3, length_answer=-1, train_task="copy", sequence_length=220, min_length=20, max_length=50, num_examples=1000, batch_size=8): 
+    def __init__(self, tokenizer, vocab_size=26, n_gram=3, length_answer=-1, train_task="copy", sequence_length=220, min_length=20, max_length=50, num_examples=1000, batch_size=8, no_pack=False):
+        self.no_pack = no_pack
         self.min_length = min_length
         self.max_length = max_length
         self.num_examples = num_examples
@@ -147,6 +148,10 @@ class CopyDataset:
                  full_str += example_str
                  prospective_len += len(example_str)
                  example_mask += example_mask_tmp
+                 if self.no_pack:   # one example per context, the rest is padding
+                    full_str += '*' * (self.sequence_length - prospective_len)
+                    example_mask += [0] * (self.sequence_length - prospective_len)
+                    break
 
             assert len(full_str) == len(example_mask)
             example_ids = self.tokenizer(full_str)
@@ -242,8 +247,9 @@ def get_train_dataset(args,tokenizer):
             min_length=args.min_train_len,
             max_length=args.max_train_len,
             batch_size=args.train_batch_size,
+            no_pack=args.no_pack,
             )
-    
+
     return train_dataset
 
 

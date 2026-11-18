@@ -49,6 +49,19 @@ Not replicated: the fused add+norm kernel and bf16/fp32 residual mixed-precision
 - `--eval_context_len` is parsed but unused; the eval set uses `--context_len`.
 - `train()` runs `steps + 1` updates and ignores `--epochs` for the loop (only the LR schedule uses it).
 
-## Adding a model
-Register it in `model_utils.get_model` and add its name to `--model` choices in `main.py`. It must map
-`ids (B, L) -> logits (B, L, V)` (or a tuple whose first element is the logits).
+## Models (`--model`)
+| `--model` | What | Extra options |
+|---|---|---|
+| `mamba` | standard Mamba (`../mamba_model.py`), state size `--state_dim` in every layer | |
+| `mamba_var1` | var1: state size varies with depth, total budget `layers * state_dim` (`../var1/`, untouched) | `--state_schedule constant\|linear` |
+| `mamba_var2` | var2: state size grows along the sequence, capped (`../mamba_growing.py`) | `--schedule "0:8,16:16,32:32,64:64"` (`start_token:N`, last N = cap) |
+
+All three are built by `model_utils.build_model` and initialised like `mamba_ssm`. A new model must map
+`ids (B, L) -> logits (B, L, V)` (or a tuple whose first element is the logits) and be causal; add it to `build_model` and to
+the `--model` choices.
+
+## Run options added to upstream
+`--no_pack` (one example per context instead of packing several; required for var2, whose state size depends on the
+position in the context, and used for all models in a comparison), `--save_every N` / `--ckpt_dir` (checkpoints),
+`--load path` (evaluate a saved checkpoint instead of training), `--compile` (fused scan, ~4x faster, not for `mamba_var2` yet),
+`--grad_checkpoint`, `--seed`. With `--no_pack` set `--context_len` to at least `2 * max_train_len + 3`.

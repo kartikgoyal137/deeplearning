@@ -35,6 +35,14 @@ parser.add_argument('--num_range', type=int, default=11)
 parser.add_argument('--seed', type=int, default=2023)
 parser.add_argument('--chain', action='store_true', default=False)
 parser.add_argument('--rpe', action='store_true', default=False)
+parser.add_argument('--accum', type=int, default=1)           # micro-batches per optimizer step (effective batch = batch_size * accum)
+parser.add_argument('--grad_checkpoint', action='store_true', default=False)   # recompute activations: same maths, less memory
+parser.add_argument('--compile', action='store_true', default=False)           # torch.compile the selective scan: same maths, ~4x faster
+parser.add_argument('--save_every', type=int, default=1)      # checkpoint every N epochs
+parser.add_argument('--model', default='mamba', choices=['mamba', 'mamba_var1', 'mamba_var2'])   # see copy_eval/model_utils.build_model
+parser.add_argument('--state_dim', type=int, default=16)      # N (mean N for mamba_var1)
+parser.add_argument('--state_schedule', default='constant', choices=['constant', 'linear'])   # mamba_var1
+parser.add_argument('--schedule', default='0:8,16:16,32:32,64:64')   # mamba_var2: "start_token:N,..."; last N = cap
 
 args = parser.parse_args()
 import sys
@@ -78,6 +86,7 @@ model = DDP(model, device_ids=[local_rank])
 model_without_ddp = model.module
 optimizer, scheduler = set_optimizer_scheduler(model)
 loader, _ = getLoader(args)
+assert len(loader) % args.accum == 0, "len(loader) must be a multiple of --accum"
 
 criterion = nn.CrossEntropyLoss(ignore_index=0)
 for epoch in range(args.epoch):
@@ -89,9 +98,10 @@ for epoch in range(args.epoch):
         inputs, y = input_ids.cuda(), y.long().cuda()
         logits = model(inputs)
         loss = criterion(logits.transpose(1,2), y)
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+        (loss / args.accum).backward()
+        if (data_iter_step + 1) % args.accum == 0:
+            optimizer.step()
+            optimizer.zero_grad()
         epoch_1000x = int((data_iter_step / len(loader) + epoch) * 1000)
         if dist.get_rank() == main_process:
             log_writer.add_scalar('loss', loss.item(), epoch_1000x)
@@ -101,7 +111,7 @@ for epoch in range(args.epoch):
     scheduler.step()
     if dist.get_rank() == main_process:
         log_writer.flush()
-    if (epoch + 1) % (args.epoch // 10) == 0:
+    if (epoch + 1) % args.save_every == 0:
         dist.barrier()
         if dist.get_rank() == main_process:
             torch.save(model_without_ddp.state_dict(), f"{args.output_dir}/epoch_{epoch+1}.pt")

@@ -38,6 +38,11 @@ length are in upstream's `assets/TRAIN.md` (LIS: len50 -> 54 direct / 105 CoT, v
 | `model.py` | removed | transformer baseline is not part of this harness |
 | everything else | unchanged | |
 
+## Options added to upstream's `train.py` / `test.py`
+`--model mamba|mamba_var1|mamba_var2` (+ `--state_dim`, `--state_schedule`, `--schedule`; see `../copy_eval/README.md`),
+`--accum N` (gradient accumulation: effective batch = `--batch_size * N`; `len(loader)` must be a multiple of it),
+`--compile` (fused scan), `--grad_checkpoint` (less memory), `--save_every N` (checkpoint every N epochs, default 1; upstream: epoch/10).
+
 ## Notes for runs
 - Mamba has no dropout, so `--drop` and `--head` are ignored. The paper uses roughly 2 Mamba layers per transformer
   layer at the same `d` (d=256 -> `--num_layer 6`).

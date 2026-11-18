@@ -104,10 +104,18 @@ def train(args,model, train_dataset, TO_TOKEN):
                 lr_scheduler.step()
                 optimizer.zero_grad()
                 completed_steps += 1
+            if args.save_every and step % args.save_every == 0:
+                save_checkpoint(args, model, step)
             if step > num_training_steps:
                 break
             # Update tqdm description with the current loss
             progress_bar.set_postfix({'Loss': loss.item()})
+    save_checkpoint(args, model, step)
+
+
+def save_checkpoint(args, model, step):
+    os.makedirs(args.ckpt_dir, exist_ok=True)
+    torch.save(model.state_dict(), f"{args.ckpt_dir}/step_{step}.pt")
 
 
 
@@ -119,7 +127,7 @@ def save_model(args, model):
         save_path = "./output_dir/"+f"model_{args.model}_layer_{args.layers}_hidden_{args.hidden_size}_heads_{args.heads}_train_{args.train_task}_lr_{args.lr}_epochs_{args.epochs}_steps_{args.steps}/"
 
 
-    elif args.model == "lstm" or args.model == "mamba":
+    elif args.model == "lstm" or args.model.startswith("mamba"):
 
         save_path = "./output_dir/"+f"model_{args.model}_layer_{args.layers}_hidden_{args.hidden_size}_train_{args.train_task}_lr_{args.lr}_epochs_{args.epochs}_steps_{args.steps}/"
 
@@ -127,7 +135,7 @@ def save_model(args, model):
         Path(save_path).mkdir(parents=True, exist_ok=True)
 
     #save model
-    if args.model=="lstm" or args.model=="mamba":
+    if args.model=="lstm" or args.model.startswith("mamba"):
         save_path += "model.pt"
         torch.save(model,save_path)
     else:

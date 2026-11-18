@@ -31,15 +31,26 @@ def parse_args():
             help="length of the answer to be returned. Set 0 if no constraint on the length of the answer.")
 
     #model
-    parser.add_argument('--model', choices=['mamba'],
-            required=True, help='''only mamba is vendored (our pure-PyTorch MambaLM). Register further
-            models (e.g. the growing-state variant) in model_utils.get_model.''')
+    parser.add_argument('--model', choices=['mamba', 'mamba_var1', 'mamba_var2'],
+            required=True, help='''mamba = standard Mamba; mamba_var1 = state size varies with depth (--state_schedule);
+            mamba_var2 = state size grows along the sequence (--schedule). See model_utils.build_model.''')
+    parser.add_argument('--state_schedule', default='constant', choices=['constant', 'linear'],
+            help="only mamba_var1: how the total state budget n_layer*state_dim is spread over depth")
+    parser.add_argument('--schedule', default='0:8,16:16,32:32,64:64', type=str,
+            help="only mamba_var2: 'start_token:N,...'; the last N is the cap on the state size")
     parser.add_argument('--hidden_size', default=1024, type=int, help="Hidden size of the models")
     parser.add_argument('--layers', default=12, type=int, help="Number of layers in the models.")
     parser.add_argument('--state_dim', default=32, type=int, help='''Only when model = ''mamba''.
             Sets the state dimension of the model.''')
     parser.add_argument('--grad_checkpoint', action='store_true',
             help="recompute activations in the backward pass (same maths, less GPU memory)")
+    parser.add_argument('--compile', action='store_true',
+            help="torch.compile the selective scan (same maths, ~4x faster)")
+    parser.add_argument('--no_pack', action='store_true',
+            help="one example per context instead of packing several (needed for position-dependent models)")
+    parser.add_argument('--save_every', default=0, type=int, help="save a checkpoint every N steps (0 = only at the end)")
+    parser.add_argument('--ckpt_dir', default="./checkpoints", type=str, help="where checkpoints are written")
+    parser.add_argument('--load', default="", type=str, help="evaluate this checkpoint (state_dict) instead of training")
 
     #optimization
     parser.add_argument('--lr', default=1e-5, type=float, help="choice of learning rate")
@@ -105,12 +116,17 @@ print("^"*100)
 
 
 ## train the model
-train(args,model,train_dataset,TO_TOKEN)
+if args.load:
+    model.load_state_dict(torch.load(args.load))
+    model.to("cuda" if torch.cuda.is_available() else "cpu")
+else:
+    train(args,model,train_dataset,TO_TOKEN)
 
 
 
 ## save model
-save_model(args, model)
+if not args.load:
+    save_model(args, model)
 
 
 ## evaluation of the model
