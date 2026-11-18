@@ -5,7 +5,7 @@ import torch.nn as nn
 
 # the models (standard Mamba, var1, var2) and the mamba_ssm-matching init are shared with copy_eval
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
-from copy_eval.model_utils import build_model
+from copy_eval.model_utils import build_model, describe, optimizer_groups, save_with_args, load_with_args  # re-exported to train.py / test.py
 
 
 class Mamba(nn.Module):

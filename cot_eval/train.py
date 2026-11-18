@@ -1,7 +1,7 @@
 import torch
 import torch.optim as optim
 import torch.nn as nn
-from model_utils import get_model
+from model_utils import get_model, optimizer_groups, describe, save_with_args, load_with_args
 import argparse
 from torch.utils.tensorboard import SummaryWriter
 import os
@@ -41,7 +41,7 @@ parser.add_argument('--compile', action='store_true', default=False)           #
 parser.add_argument('--save_every', type=int, default=1)      # checkpoint every N epochs
 parser.add_argument('--model', default='mamba', choices=['mamba', 'mamba_var1', 'mamba_var2'])   # see copy_eval/model_utils.build_model
 parser.add_argument('--state_dim', type=int, default=16)      # N (mean N for mamba_var1)
-parser.add_argument('--state_schedule', default='constant', choices=['constant', 'linear'])   # mamba_var1
+parser.add_argument('--state_schedule', default='linear', choices=['constant', 'linear'])   # mamba_var1
 parser.add_argument('--schedule', default='0:8,16:16,32:32,64:64')   # mamba_var2: "start_token:N,..."; last N = cap
 
 args = parser.parse_args()
@@ -57,20 +57,8 @@ if dist.get_rank() == main_process:
     log_writer = SummaryWriter(log_dir=args.output_dir)
 
 def set_optimizer_scheduler(model):
-    no_decay = ["bias", "LayerNorm.weight"]
-    optimizer_grouped_parameters = [
-        {
-            "params": [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)],
-            "weight_decay": args.weight_decay,
-            "lr": args.learning_rate,
-        },
-        {
-            "params": [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)],
-            "weight_decay": 0.0,
-            "lr": args.learning_rate,
-        },
-    ]
-    optimizer = optim.AdamW(optimizer_grouped_parameters)
+    # no weight decay on A_log, D, norms and biases (upstream's name list "bias"/"LayerNorm.weight" missed RMSNorm, A_log and D)
+    optimizer = optim.AdamW(optimizer_groups(model, args.weight_decay), lr=args.learning_rate)
     scheduler = get_scheduler(name='linear', optimizer=optimizer, \
                 num_warmup_steps=args.warmup, num_training_steps=args.epoch)
     return optimizer, scheduler
@@ -81,7 +69,9 @@ torch.cuda.set_device(local_rank)
 dist.barrier()
 model = get_model(args).cuda()
 if args.model_path:
-    model.load_state_dict(torch.load(args.model_path), strict=True)
+    load_with_args(model, args, args.model_path, ["dmodel", "num_layer", "vocab"])
+if dist.get_rank() == main_process:
+    print(describe(model.lm))
 model = DDP(model, device_ids=[local_rank])
 model_without_ddp = model.module
 optimizer, scheduler = set_optimizer_scheduler(model)
@@ -114,6 +104,6 @@ for epoch in range(args.epoch):
     if (epoch + 1) % args.save_every == 0:
         dist.barrier()
         if dist.get_rank() == main_process:
-            torch.save(model_without_ddp.state_dict(), f"{args.output_dir}/epoch_{epoch+1}.pt")
+            save_with_args(model_without_ddp, args, f"{args.output_dir}/epoch_{epoch+1}.pt")
     if dist.get_rank() == main_process:
         log_writer.flush()

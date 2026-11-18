@@ -53,7 +53,7 @@ Not replicated: the fused add+norm kernel and bf16/fp32 residual mixed-precision
 | `--model` | What | Extra options |
 |---|---|---|
 | `mamba` | standard Mamba (`../mamba_model.py`), state size `--state_dim` in every layer | |
-| `mamba_var1` | var1: state size varies with depth, total budget `layers * state_dim` (`../var1/`, untouched) | `--state_schedule constant\|linear` |
+| `mamba_var1` | var1: state size varies with depth, total budget `layers * state_dim` (`../var1/`, untouched) | `--state_schedule linear\|constant` (default `linear`; `constant` is identical to `mamba`) |
 | `mamba_var2` | var2: state size grows along the sequence, capped (`../mamba_growing.py`) | `--schedule "0:8,16:16,32:32,64:64"` (`start_token:N`, last N = cap) |
 
 All three are built by `model_utils.build_model` and initialised like `mamba_ssm`. A new model must map
@@ -65,3 +65,21 @@ the `--model` choices.
 position in the context, and used for all models in a comparison), `--save_every N` / `--ckpt_dir` (checkpoints),
 `--load path` (evaluate a saved checkpoint instead of training), `--compile` (fused scan, ~4x faster, not for `mamba_var2` yet),
 `--grad_checkpoint`, `--seed`. With `--no_pack` set `--context_len` to at least `2 * max_train_len + 3`.
+`--same_len` (with `--no_pack`): every training batch uses one string length (drawn at random per batch) and its context is cut to
+a multiple of 16 tokens, so about 14% of the computed tokens are padding instead of about 43% (~1.7x faster). It changes batch
+composition (lengths are not mixed inside a batch), which is a deviation from upstream; use it for all models in a comparison.
+
+## Other deviations from upstream training (apply to every model)
+- **Weight decay** (`model_utils.optimizer_groups`): decay 0.1 on the projections and embedding, none on `A_log`, `D`, norm weights and biases,
+  as in `mamba_ssm` training. Upstream decays everything; with our learning rate (1e-3) that would shrink `A_log` to about 13% over
+  40k steps and erase the multi-timescale initialisation of the forgetting speeds.
+- **Checkpoints** store the run's arguments. `--load` refuses a checkpoint whose model, width/depth or state settings differ (a var2
+  checkpoint has the same tensor shapes as a plain model with N = its cap, so it would otherwise load silently).
+- The first line printed at start (`describe`) says which model was built, its state sizes and parameter count; read it before trusting a run.
+
+## Choosing var2 schedules
+The schedule uses **absolute token positions** inside the context, so it must be chosen for the task length. For strings of n letters the
+string ends at position n+1 and the answer is copied afterwards. Use two schedules per comparison: one whose cap equals the baseline N
+(e.g. `0:4,16:8,32:16` against constant N=16, same parameters) and one with a larger cap (`0:8,16:16,32:32,64:64` against constant N=64,
+same parameters). A var2 model with a larger cap than the baseline has more parameters and state, so it must not be compared with the
+smaller baseline alone.

@@ -17,6 +17,12 @@ COPY and CoT Reasoning").
 Both harnesses take `--model mamba | mamba_var1 | mamba_var2`, so the three models are trained and tested under identical
 settings (see `copy_eval/README.md` and `cot_eval/README.md` for options and commands).
 
+## Things to know before comparing models
+- `var1/` is kept untouched. Its notebooks' **saved outputs are from earlier runs** (for example the state-size printout shows a uniform N = 16),
+  so they do not describe the variation; re-run them if you need that output. The harnesses test var1 through `--model mamba_var1`.
+- `--model mamba_var1` defaults to `--state_schedule linear`; `constant` is identical to `--model mamba`.
+- var2 has a cap (largest N); compare it with a constant model at that cap (same parameters) and, with a second schedule ending at the baseline N, with the baseline. See `copy_eval/README.md`.
+
 ## Status
 - Standard Mamba, var1, var2 and both harnesses are implemented and tested (`copy_eval/sanity_checks.py`, `test_growing.py`).
 - No baseline or variation results yet: the long training runs have not been done.

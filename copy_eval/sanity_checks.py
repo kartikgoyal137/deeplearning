@@ -27,7 +27,7 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 args = Namespace(
     train_task="copy", eval_task="copy", vocab_size=26, n_gram=0, length_answer=0,
     model="mamba", hidden_size=64, layers=2, state_dim=16, grad_checkpoint=False,
-    compile=False, no_pack=False, state_schedule="constant", schedule="0:8,16:16",
+    compile=False, no_pack=False, same_len=False, state_schedule="constant", schedule="0:8,16:16",
     train_batch_size=4, eval_batch_size=8, eval_num_batches=3,
     min_train_len=5, max_train_len=20, min_eval_len=10, max_eval_len=20,
     context_len=220, eval_context_len=220,
@@ -149,5 +149,40 @@ with torch.no_grad():
     pert = model(idx2)[0]
 assert torch.equal(base[:, :100], pert[:, :100]) and not torch.equal(base[:, 100:], pert[:, 100:])
 ok("causal: changing token 100 leaves logits at positions < 100 untouched, changes later ones")
+
+# ------------------------------------------------------------------------- 4. training helpers
+print("4. training helpers")
+import os
+import tempfile
+from model_utils import build_model, optimizer_groups, save_with_args, load_with_args, describe
+
+m = build_model("mamba", 32, 64, 2, 16, "linear", "0:8,16:16", False, False)
+groups = optimizer_groups(m, 0.1)
+assert sum(len(g["params"]) for g in groups) == len(list(m.parameters()))          # every parameter is in exactly one group
+no_decay = {id(p) for p in groups[1]["params"]}
+for name, p in m.named_parameters():
+    if name.endswith(("A_log", ".D", "norm.weight", "norm_f.weight", "bias")):
+        assert id(p) in no_decay, name
+    if name.endswith(("in_proj.weight", "out_proj.weight", "x_proj.weight")):
+        assert id(p) not in no_decay, name
+ok("weight decay skips A_log, D, norm weights and biases; the projections are decayed")
+
+v2 = build_model("mamba_var2", 32, 64, 2, 16, "linear", "0:8,16:64", False, False)
+plain64 = build_model("mamba", 32, 64, 2, 64, "linear", "0:8,16:64", False, False)
+assert {k: v.shape for k, v in v2.state_dict().items()} == {k: v.shape for k, v in plain64.state_dict().items()}
+path = os.path.join(tempfile.mkdtemp(), "ckpt.pt")
+a2 = Namespace(**{**vars(args), "model": "mamba_var2", "schedule": "0:8,16:64", "hidden_size": 64, "layers": 2})
+save_with_args(v2, a2, path)
+for bad in (dict(model="mamba", state_dim=64), dict(schedule="0:8,16:32,32:64")):
+    try:
+        load_with_args(plain64 if "state_dim" in bad else v2, Namespace(**{**vars(a2), **bad}), path, ["hidden_size", "layers"])
+        raise SystemExit(f"checkpoint should have been refused: {bad}")
+    except AssertionError:
+        pass
+load_with_args(v2, a2, path, ["hidden_size", "layers"])
+ok("a var2 checkpoint (same shapes as a plain N=64 model) is refused by a plain model or another schedule, and loads with its own settings")
+
+assert "GrowingMambaLM" in describe(v2) and "schedule" in describe(v2) and "per layer" in describe(m)
+ok("describe(): " + describe(v2))
 
 print("\nall checks passed")

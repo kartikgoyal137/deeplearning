@@ -90,8 +90,9 @@ def sample_str(len1,n_gram,length_answer,task,vocab_size=26):
     return example_str 
 
 class CopyDataset:
-    def __init__(self, tokenizer, vocab_size=26, n_gram=3, length_answer=-1, train_task="copy", sequence_length=220, min_length=20, max_length=50, num_examples=1000, batch_size=8, no_pack=False):
+    def __init__(self, tokenizer, vocab_size=26, n_gram=3, length_answer=-1, train_task="copy", sequence_length=220, min_length=20, max_length=50, num_examples=1000, batch_size=8, no_pack=False, same_len=False):
         self.no_pack = no_pack
+        self.same_len = same_len
         self.min_length = min_length
         self.max_length = max_length
         self.num_examples = num_examples
@@ -118,14 +119,20 @@ class CopyDataset:
         if self.sequence_length <= minimal_required_length:
             raise ValueError(f"Strings of size {self.max_length} do not fit in a context of size {self.sequence_length} because {2*self.max_length}>{self.sequence_length}. Increase your context length !")
 
+        sequence_length = self.sequence_length
+        batch_len = None
+        if self.same_len:   # one string length per batch (needs no_pack): almost no padding; context rounded up to a multiple of 16
+            batch_len = np.random.randint(self.min_length, self.max_length+1)
+            sequence_length = -(-(2*batch_len + 3) // 16) * 16
+
         for _ in range(self.batch_size):
             prospective_len = 0
             full_str = ""
             example_mask = []
-            while prospective_len < self.sequence_length:
-              
-              ##sample a string  
-              len1 = np.random.randint(self.min_length, self.max_length+1)
+            while prospective_len < sequence_length:
+
+              ##sample a string
+              len1 = batch_len if self.same_len else np.random.randint(self.min_length, self.max_length+1)
               example_str = sample_str(len1,self.n_gram,self.length_answer,self.train_task,self.vocab_size)
               
               ###setting up mask for training loss 
@@ -138,9 +145,9 @@ class CopyDataset:
               
 
               #packing the context with examples
-              if prospective_len+len(example_str) > self.sequence_length:
-                 remaining_len = self.sequence_length - prospective_len
-                 remaining_mask_len = self.sequence_length - prospective_len
+              if prospective_len+len(example_str) > sequence_length:
+                 remaining_len = sequence_length - prospective_len
+                 remaining_mask_len = sequence_length - prospective_len
                  full_str += example_str[:remaining_len]
                  example_mask += [0]*(remaining_mask_len)
                  break
@@ -149,8 +156,8 @@ class CopyDataset:
                  prospective_len += len(example_str)
                  example_mask += example_mask_tmp
                  if self.no_pack:   # one example per context, the rest is padding
-                    full_str += '*' * (self.sequence_length - prospective_len)
-                    example_mask += [0] * (self.sequence_length - prospective_len)
+                    full_str += '*' * (sequence_length - prospective_len)
+                    example_mask += [0] * (sequence_length - prospective_len)
                     break
 
             assert len(full_str) == len(example_mask)
@@ -248,6 +255,7 @@ def get_train_dataset(args,tokenizer):
             max_length=args.max_train_len,
             batch_size=args.train_batch_size,
             no_pack=args.no_pack,
+            same_len=args.same_len,
             )
 
     return train_dataset

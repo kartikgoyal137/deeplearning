@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from model_utils import get_model
+from model_utils import get_model, describe, load_with_args
 import argparse
 import os
 import torch.distributed as dist
@@ -30,7 +30,7 @@ parser.add_argument('--grad_checkpoint', action='store_true', default=False)   #
 parser.add_argument('--compile', action='store_true', default=False)
 parser.add_argument('--model', default='mamba', choices=['mamba', 'mamba_var1', 'mamba_var2'])
 parser.add_argument('--state_dim', type=int, default=16)
-parser.add_argument('--state_schedule', default='constant', choices=['constant', 'linear'])
+parser.add_argument('--state_schedule', default='linear', choices=['constant', 'linear'])
 parser.add_argument('--schedule', default='0:8,16:16,32:32,64:64')
 
 args = parser.parse_args()
@@ -48,7 +48,8 @@ torch.cuda.set_device(local_rank)
 dist.barrier()
 model = get_model(args).cuda()
 if args.model_path:
-    model.load_state_dict(torch.load(args.model_path), strict=True)
+    load_with_args(model, args, args.model_path, ["dmodel", "num_layer", "vocab"])
+print(describe(model.lm))
 model = DDP(model, device_ids=[local_rank])
 model_without_ddp = model.module
 _, test_loader = getLoader(args)

@@ -5,6 +5,7 @@ from pathlib import Path
 from torch.optim import AdamW
 import torch
 import os
+from model_utils import optimizer_groups, save_with_args
 
 def ce_loss(inputs, logits, mask, TO_TOKEN):
     # Shift so that tokens < n predict n
@@ -22,7 +23,7 @@ def ce_loss(inputs, logits, mask, TO_TOKEN):
 
 def get_optimizer(model,args):
     
-    optimizer = AdamW(model.parameters(), lr=args.lr, weight_decay=0.1)
+    optimizer = AdamW(optimizer_groups(model, 0.1), lr=args.lr)   # weight decay 0.1, but not on A_log, D, norms, biases
     return optimizer
 
 def custom_get_scheduler(optimizer,num_training_steps):
@@ -115,7 +116,7 @@ def train(args,model, train_dataset, TO_TOKEN):
 
 def save_checkpoint(args, model, step):
     os.makedirs(args.ckpt_dir, exist_ok=True)
-    torch.save(model.state_dict(), f"{args.ckpt_dir}/step_{step}.pt")
+    save_with_args(model, args, f"{args.ckpt_dir}/step_{step}.pt")
 
 
 

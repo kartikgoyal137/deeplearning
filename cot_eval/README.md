@@ -43,6 +43,17 @@ length are in upstream's `assets/TRAIN.md` (LIS: len50 -> 54 direct / 105 CoT, v
 `--accum N` (gradient accumulation: effective batch = `--batch_size * N`; `len(loader)` must be a multiple of it),
 `--compile` (fused scan), `--grad_checkpoint` (less memory), `--save_every N` (checkpoint every N epochs, default 1; upstream: epoch/10).
 
+## Settings that must match the data
+- LIS data made with `--number_range R` needs `--num_range R --vocab R+3` (pad, `<sep>`, `<eos>` + the R numbers). Upstream's defaults
+  (`--vocab 21 --num_range 11`) are for the arithmetic task and give a `KeyError` on LIS data.
+- `--maxlen` and `--maxdata` must be at least the longest example + 1: `2L+5` for CoT, `L+4` for direct (upstream table). The default 120 is too small for L > 57.
+- Same deviations as `../copy_eval/README.md`: weight decay is not applied to `A_log`, `D`, norms and biases, and checkpoints store the run
+  arguments and are refused on a mismatch.
+- Upstream's scheduler steps once per epoch, so **epoch 1 trains at learning rate 0** (warmup factor 0/warmup). This is the same for every
+  model; with 20 epochs it costs 1 of 20.
+- The paper reports the mean test accuracy over the last 5 epochs and averages 3 seeds; `runs/queue.sh` evaluates epochs 16 to 20 of a
+  20-epoch run. Differences between variants at this size are often within seed noise, so repeat finalists with other `--seed` values.
+
 ## Notes for runs
 - Mamba has no dropout, so `--drop` and `--head` are ignored. The paper uses roughly 2 Mamba layers per transformer
   layer at the same `d` (d=256 -> `--num_layer 6`).

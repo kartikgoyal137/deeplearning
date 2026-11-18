@@ -85,6 +85,7 @@ def build_model(name, vocab_size, d_model, n_layer, d_state, state_schedule, sch
         raise ValueError(f"unknown model '{name}'")
     if compile:
         assert scan_module is not None, "--compile is not implemented for mamba_var2 yet"
+        torch._dynamo.config.cache_size_limit = 32    # --same_len gives a few context lengths; compile each one
         scan_module.compile_scan()                    # fused scan: same maths, faster
     init_like_mamba_ssm(model)
     model.grad_checkpoint = grad_checkpoint           # recompute activations: same maths, less memory
@@ -97,3 +98,38 @@ def get_model(args, tokenizer):
     vocab_size += (-vocab_size) % 8
     return build_model(args.model, vocab_size, args.hidden_size, args.layers, args.state_dim,
                        args.state_schedule, args.schedule, args.grad_checkpoint, args.compile)
+
+
+def describe(model):
+    """One line saying which model was really built (the standard model and var1 are both files called mamba_model.py)."""
+    ssm = model.layers[0].mixer.ssm
+    if hasattr(model, "schedule"):
+        sizes = f"state-size schedule {model.schedule}"
+    else:
+        sizes = f"state size per layer {[getattr(l.mixer.ssm, 'd_state', model.cfg.d_state) for l in model.layers]}"
+    return f"{type(model).__module__}.{type(model).__name__} with {type(ssm).__name__}, {sizes}, {sum(p.numel() for p in model.parameters()):,} parameters"
+
+
+def optimizer_groups(model, weight_decay):
+    """AdamW parameter groups as in mamba_ssm training: no weight decay on biases, norm weights, A_log and D.
+    (Decaying A_log pulls every forgetting speed towards A = -1 and erases the multi-timescale init.)"""
+    flagged = lambda p: p.ndim < 2 or getattr(p, "_no_weight_decay", False)
+    return [{"params": [p for p in model.parameters() if not flagged(p)], "weight_decay": weight_decay},
+            {"params": [p for p in model.parameters() if flagged(p)], "weight_decay": 0.0}]
+
+
+# settings that decide the model, per --model (a var2 checkpoint has the same shapes as a plain model with N = its cap)
+MODEL_SETTINGS = {"mamba": ["state_dim"], "mamba_var1": ["state_dim", "state_schedule"], "mamba_var2": ["schedule"]}
+
+
+def save_with_args(model, args, path):
+    torch.save({"state_dict": model.state_dict(), "args": vars(args)}, path)
+
+
+def load_with_args(model, args, path, size_keys):
+    """Load a checkpoint after checking it was trained with the same model settings. size_keys: the width / depth / vocab argument names."""
+    ckpt = torch.load(path, map_location="cpu")
+    for key in ["model"] + list(size_keys) + MODEL_SETTINGS[args.model]:
+        assert ckpt["args"].get(key) == getattr(args, key), \
+            f"checkpoint was trained with {key}={ckpt['args'].get(key)!r}, but {key}={getattr(args, key)!r} was given"
+    model.load_state_dict(ckpt["state_dict"])
