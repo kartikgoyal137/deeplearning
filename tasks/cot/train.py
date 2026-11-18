@@ -39,7 +39,7 @@ parser.add_argument('--accum', type=int, default=1)           # micro-batches pe
 parser.add_argument('--grad_checkpoint', action='store_true', default=False)   # recompute activations: same maths, less memory
 parser.add_argument('--compile', action='store_true', default=False)           # torch.compile the selective scan: same maths, ~4x faster
 parser.add_argument('--save_every', type=int, default=1)      # checkpoint every N epochs
-parser.add_argument('--model', default='mamba', choices=['mamba', 'mamba_var1', 'mamba_var2'])   # see copy_eval/model_utils.build_model
+parser.add_argument('--model', default='mamba', choices=['mamba', 'mamba_var1', 'mamba_var2'])   # see models/build.py
 parser.add_argument('--state_dim', type=int, default=16)      # N (mean N for mamba_var1)
 parser.add_argument('--state_schedule', default='constant', choices=['constant', 'linear'])   # mamba_var1
 parser.add_argument('--schedule', default='0:8,16:16,32:32,64:64')   # mamba_var2: "start_token:N,..."; last N = cap

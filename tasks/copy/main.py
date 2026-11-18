@@ -33,7 +33,7 @@ def parse_args():
     #model
     parser.add_argument('--model', choices=['mamba', 'mamba_var1', 'mamba_var2'],
             required=True, help='''mamba = standard Mamba; mamba_var1 = state size varies with depth (--state_schedule);
-            mamba_var2 = state size grows along the sequence (--schedule). See model_utils.build_model.''')
+            mamba_var2 = state size grows along the sequence (--schedule). See models/build.py.''')
     parser.add_argument('--state_schedule', default='constant', choices=['constant', 'linear'],
             help="only mamba_var1: how the total state budget n_layer*state_dim is spread over depth")
     parser.add_argument('--schedule', default='0:8,16:16,32:32,64:64', type=str,

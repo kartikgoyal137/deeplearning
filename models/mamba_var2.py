@@ -1,7 +1,7 @@
 """
 var2: Mamba whose state size N grows along the sequence (capped at N_max).
 
-The standard Mamba (mamba_model.py) uses the same state size N at every token. Here N follows a
+The standard Mamba (models/mamba.py) uses the same state size N at every token. Here N follows a
 schedule, e.g. [(0, 8), (16, 16), (32, 32), (64, 64)] = "N = 8 from token 0, 16 from token 16,
 32 from token 32, 64 from token 64 on". The last N is the cap, so the state memory is bounded.
 
@@ -16,7 +16,7 @@ Same schedule in every layer. Training/evaluation path only (`step`/`generate` a
 import torch
 import torch.nn.functional as F
 
-from mamba_model import MambaConfig, MambaLM, SelectiveSSM
+from models.mamba import MambaConfig, MambaLM, SelectiveSSM
 
 
 def parse_schedule(text: str):
@@ -25,7 +25,7 @@ def parse_schedule(text: str):
 
 
 def scan_with_state(u, delta, A, B_, C_, D_, z, h, chunk: int = 8):
-    """`selective_scan_chunked` from mamba_model.py, copied, with one change: it starts from the
+    """`selective_scan_chunked` from models/mamba.py, copied, with one change: it starts from the
     state `h` (B, D, N) instead of zeros and also returns the final state."""
     b, l, d = u.shape
     u, delta, B_, C_, A, h = u.float(), delta.float(), B_.float(), C_.float(), A.float(), h.float()

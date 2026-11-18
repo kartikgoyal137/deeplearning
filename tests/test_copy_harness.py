@@ -1,4 +1,4 @@
-"""Sanity checks for the copy-task harness. Run:  python sanity_checks.py
+"""Sanity checks for the copy-task harness. Run:  python tests/test_copy_harness.py
 
 1. data      - example format `$abc|abc.` and that the loss mask covers exactly `answer + '.'`
 2. metrics   - get_score / evaluation() give 1.0 for a perfect predictor and ~0 for a random one
@@ -9,17 +9,22 @@
 import contextlib
 import io
 import math
+import pathlib
 import re
+import sys
 from argparse import Namespace
 
 import numpy as np
 import torch
 import torch.nn as nn
 
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tasks" / "copy"))     # the copy harness modules (data_utils, ...)
+sys.path.insert(0, str(ROOT))                        # the models package
 from data_utils import get_tokenizer, get_train_dataset, get_eval_dataset
 from model_utils import get_model, init_like_mamba_ssm
 from test_utils import evaluation, get_score
-from mamba_model import (MambaConfig, MambaLM, SelectiveSSM,
+from models.mamba import (MambaConfig, MambaLM, SelectiveSSM,
                          selective_scan_chunked, selective_scan_seq)
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"

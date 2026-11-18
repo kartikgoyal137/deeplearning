@@ -1,17 +1,13 @@
-import importlib.util
+"""Builds the three compared models, all initialised like mamba_ssm. Shared by tasks/copy and tasks/cot."""
 import math
-import pathlib
-import sys
 
 import torch
 import torch.nn as nn
 import torch.utils.checkpoint  # MambaLM.grad_checkpoint uses torch.utils.checkpoint
 
-# our pure-PyTorch Mamba (standard, var2) lives one directory up, var1 in ../var1
-ROOT = pathlib.Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
-from mamba_model import MambaConfig, MambaLM
-from mamba_growing import GrowingMambaLM, parse_schedule
+from models import mamba, mamba_var1
+from models.mamba import MambaConfig, MambaLM
+from models.mamba_var2 import GrowingMambaLM, parse_schedule
 
 
 def init_like_mamba_ssm(model: MambaLM, initializer_range: float = 0.02):
@@ -53,18 +49,8 @@ def init_like_mamba_ssm(model: MambaLM, initializer_range: float = 0.02):
     nn.init.normal_(model.embedding.weight, std=initializer_range)
 
 
-def load_var1():
-    """var1 (depth-varying state, kept untouched in ../var1/) has the same module name as the
-    standard model, so it is loaded under another name."""
-    spec = importlib.util.spec_from_file_location("mamba_var1", ROOT / "var1" / "mamba_model.py")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["mamba_var1"] = module
-    spec.loader.exec_module(module)
-    return module
-
-
 def build_model(name, vocab_size, d_model, n_layer, d_state, state_schedule, schedule, grad_checkpoint, compile):
-    """The three models that are compared, all initialised like mamba_ssm (shared by copy_eval and cot_eval).
+    """The three models that are compared, all initialised like mamba_ssm .
 
     mamba      standard Mamba, state size d_state in every layer
     mamba_var1 var1: state size varies with depth (state_schedule: "constant" | "linear", mean N = d_state)
@@ -73,9 +59,9 @@ def build_model(name, vocab_size, d_model, n_layer, d_state, state_schedule, sch
     kw = dict(vocab_size=vocab_size, d_model=d_model, n_layer=n_layer)
     if name == "mamba":
         model = MambaLM(MambaConfig(d_state=d_state, **kw))
-        scan_module = sys.modules["mamba_model"]
+        scan_module = mamba
     elif name == "mamba_var1":
-        scan_module = load_var1()
+        scan_module = mamba_var1
         model = scan_module.MambaLM(scan_module.MambaConfig(d_state=d_state, state_schedule=state_schedule, **kw))
     elif name == "mamba_var2":
         schedule = parse_schedule(schedule)
@@ -90,10 +76,3 @@ def build_model(name, vocab_size, d_model, n_layer, d_state, state_schedule, sch
     model.grad_checkpoint = grad_checkpoint           # recompute activations: same maths, less memory
     return model
 
-
-def get_model(args, tokenizer):
-    # mamba_ssm pads the vocab to a multiple of 8 (pad_vocab_size_multiple=8)
-    vocab_size = len(tokenizer)
-    vocab_size += (-vocab_size) % 8
-    return build_model(args.model, vocab_size, args.hidden_size, args.layers, args.state_dim,
-                       args.state_schedule, args.schedule, args.grad_checkpoint, args.compile)

@@ -3,3 +3,9 @@ checkpoints/
 data/
 .ipynb_checkpoints/
 /venv
+Data/
+output/
+# results downloaded from the Modal volume (modal volume get mamba-runs ... runs/)
+runs/
+# written by the notebooks' %%writefile cell (the canonical copies are in models/)
+notebooks/*/mamba_model.py

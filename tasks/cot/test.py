@@ -33,7 +33,10 @@ parser.add_argument('--state_dim', type=int, default=16)
 parser.add_argument('--state_schedule', default='constant', choices=['constant', 'linear'])
 parser.add_argument('--schedule', default='0:8,16:16,32:32,64:64')
 
-args = parser.parse_args()
+# training-only options (--learning_rate, --epoch, ...) are ignored, so train.py and test.py can share one arg list
+args, ignored = parser.parse_known_args()
+if ignored:
+    print(f"test.py ignores: {ignored}")
 
 import sys
 sys.path.append(args.folder)

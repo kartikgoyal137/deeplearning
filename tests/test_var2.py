@@ -1,4 +1,4 @@
-"""Correctness tests for var2 (mamba_growing.py). Run:  python test_growing.py   (no training)
+"""Correctness tests for var2 (models/mamba_var2.py). Run:  python tests/test_var2.py   (no training)
 
 1. one-stage schedule == the standard SelectiveSSM (same weights)
 2. staged scan == a full-N_max literal recurrence where B and C of not-yet-active dims are zero
@@ -6,11 +6,15 @@
 3. causal: changing token t does not change outputs before t
 4. every parameter gets a finite gradient
 """
+import pathlib
+import sys
+
 import torch
 import torch.nn.functional as F
 
-from mamba_model import MambaConfig, SelectiveSSM, selective_scan_seq
-from mamba_growing import GrowingMambaLM, GrowingSSM, parse_schedule
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+from models.mamba import MambaConfig, SelectiveSSM, selective_scan_seq
+from models.mamba_var2 import GrowingMambaLM, GrowingSSM, parse_schedule
 
 torch.manual_seed(0)
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"

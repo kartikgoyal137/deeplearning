@@ -1,7 +1,7 @@
 # CoT evaluation (Longest Increasing Subsequence)
 
 Train and test Mamba variants on the LIS task with and without chain-of-thought (CoT), the
-setup `cot.pdf` (Ren et al.) takes from Feng et al. 2024, "Towards Revealing the Mystery behind
+setup `papers/cot.pdf` (Ren et al.) takes from Feng et al. 2024, "Towards Revealing the Mystery behind
 Chain of Thought". The code is vendored from [guyuntian/CoT_benchmark](https://github.com/guyuntian/CoT_benchmark)
 (MIT, see `LICENSE`); only the `LIS` task is included. Only the model is replaced.
 
@@ -33,13 +33,14 @@ length are in upstream's `assets/TRAIN.md` (LIS: len50 -> 54 direct / 105 CoT, v
 | File | Change | Why |
 |---|---|---|
 | `train.py`, `test.py` | `GPT(args)` -> `get_model(args)` | use Mamba instead of the minGPT transformer |
-| `model_utils.py` (new) | `Mamba` wrapper around our `MambaLM`, initialised like `mamba_ssm` | see `../copy_eval/README.md` for why the init matters |
+| `model_utils.py` (new) | `Mamba` wrapper around `models.build.build_model`, initialised like `mamba_ssm` | see `../copy/README.md` for why the init matters |
+| `test.py` | `parse_known_args`: training-only options are ignored (and printed) | `modal_app.py` passes one arg list to train and test |
 | `LIS/dataloader.py` | `num_workers=10` -> `0` | the data is already in memory; Python 3.14's default worker start method re-imports `train.py` and crashes |
 | `model.py` | removed | transformer baseline is not part of this harness |
 | everything else | unchanged | |
 
 ## Options added to upstream's `train.py` / `test.py`
-`--model mamba|mamba_var1|mamba_var2` (+ `--state_dim`, `--state_schedule`, `--schedule`; see `../copy_eval/README.md`),
+`--model mamba|mamba_var1|mamba_var2` (+ `--state_dim`, `--state_schedule`, `--schedule`; see `../copy/README.md`),
 `--accum N` (gradient accumulation: effective batch = `--batch_size * N`; `len(loader)` must be a multiple of it),
 `--compile` (fused scan), `--grad_checkpoint` (less memory), `--save_every N` (checkpoint every N epochs, default 1; upstream: epoch/10).
 

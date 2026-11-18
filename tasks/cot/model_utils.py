@@ -3,9 +3,9 @@ import sys
 
 import torch.nn as nn
 
-# the models (standard Mamba, var1, var2) and the mamba_ssm-matching init are shared with copy_eval
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
-from copy_eval.model_utils import build_model
+# the models (standard Mamba, var1, var2) and the mamba_ssm-matching init live in <repo>/models
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
+from models.build import build_model
 
 
 class Mamba(nn.Module):
