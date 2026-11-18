@@ -91,6 +91,10 @@ def sample_str(len1,n_gram,length_answer,task,vocab_size=26):
 
 class CopyDataset:
     def __init__(self, tokenizer, vocab_size=26, n_gram=3, length_answer=-1, train_task="copy", sequence_length=220, min_length=20, max_length=50, num_examples=1000, batch_size=8, no_pack=False, same_len=False):
+        if same_len and not no_pack:
+            raise ValueError("same_len (one string length per batch) requires no_pack (one example per context)")
+        if same_len and train_task != "copy":
+            raise ValueError("same_len assumes the copy example length 2*n+3; use it with train_task='copy' only")
         self.no_pack = no_pack
         self.same_len = same_len
         self.min_length = min_length
